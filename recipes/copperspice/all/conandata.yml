@@ -1,0 +1,4 @@
+sources:
+  "1.6.3":
+    url: "https://github.com/copperspice/copperspice/archive/cs-1.6.3.tar.gz"
+    sha256: "407ca6e59f8acb2bfb4bf1fe9d3e9115a504306a4c8ef437c7510cdc63e4cb55"
