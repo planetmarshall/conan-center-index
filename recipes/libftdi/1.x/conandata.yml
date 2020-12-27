@@ -2,4 +2,11 @@ sources:
   "1.5":
     sha256: 7c7091e9c86196148bd41177b4590dccb1510bfe6cea5bf7407ff194482eb049
     url: "https://www.intra2net.com/en/developer/libftdi/download/libftdi1-1.5.tar.bz2"
-
+patches:
+  "1.5":
+    - patch_file: "patches/0001-don-t-use-global-cmake-directories.patch"
+      base_path: "source_subfolder"
+    - patch_file: "patches/0002-install-shared-libs-optionally.patch"
+      base_path: "source_subfolder"
+    - patch_file: "patches/0003-msvc-allow-libusb-libprefix.patch"
+      base_path: "source_subfolder"
