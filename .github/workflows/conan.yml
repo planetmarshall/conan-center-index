@@ -26,4 +26,3 @@ jobs:
       run: |
         conan create . libiconv/1.16@ --build missing --build libiconv
       working-directory: recipes/libiconv/all
-      shell: bash
