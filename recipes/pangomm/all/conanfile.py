@@ -1,9 +1,10 @@
+import os
+import shutil
+
 from conans import ConanFile, Meson, tools
 from conan.tools.files import rename
 from conan.tools.microsoft import is_msvc
 from conans.errors import ConanInvalidConfiguration
-import os
-import shutil
 
 
 class PangommConan(ConanFile):
@@ -61,12 +62,6 @@ class PangommConan(ConanFile):
 
     def requirements(self):
         self.requires("pango/1.50.7")
-
-        # FIXME: temporary fix for dependency versions mismatch
-        # once dependencies versions are bumped remove these requirements
-        self.requires("expat/2.4.8")
-        self.requires("zlib/1.2.12")
-        self.requires("glib/2.72.1")
 
         if self._is_2_48_api:
             self.requires("glibmm/2.72.1")
@@ -165,7 +160,6 @@ class PangommConan(ConanFile):
                                  f"pangomm-{self._api_version}.lib"),
                 )
 
-
     def package_info(self):
         pangomm_lib = f"pangomm-{self._api_version}"
         glibmm_lib = "glibmm::glibmm-2.68" if self._is_2_48_api else "glibmm::glibmm-2.4"
@@ -184,6 +178,6 @@ class PangommConan(ConanFile):
             "pkg_config_custom_content",
             f"gmmprocm4dir=${{libdir}}/{pangomm_lib}/proc/m4")
 
-        # FIXME: remove once dependency mismatch issues are solved
-        self.cpp_info.components[pangomm_lib].requires.extend(
-            ["expat::expat", "zlib::zlib", "glib::glib-2.0"])
+    def package_id(self):
+        self.cpp_info.requires["glib"].full_package_mode()
+        self.cpp_info.requires["pango"].full_package_mode()
