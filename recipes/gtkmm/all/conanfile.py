@@ -2,16 +2,18 @@ import os
 import re
 
 from conan import ConanFile
-from conan.tools import (
-    build,
-    files,
-    microsoft,
-    scm
-)
-from conans import Meson, tools
-from conans.errors import ConanInvalidConfiguration
+from conan.errors import ConanInvalidConfiguration
+from conan.tools.apple import fix_apple_shared_install_name
+from conan.tools.build import check_min_cppstd
+from conan.tools.env import VirtualBuildEnv
+from conan.tools.files import apply_conandata_patches, copy, export_conandata_patches, get, replace_in_file, rm, rmdir
+from conan.tools.gnu import PkgConfigDeps
+from conan.tools.layout import basic_layout
+from conan.tools.meson import Meson, MesonToolchain
+from conan.tools.microsoft import check_min_vs, is_msvc
+from conan.tools.scm import Version
 
-required_conan_version = ">=1.33.0"
+required_conan_version = ">=1.53.0"
 
 
 class GtkmmConan(ConanFile):
@@ -33,105 +35,91 @@ class GtkmmConan(ConanFile):
         "fPIC": True
     }
 
-    short_paths = True
+    @property
+    def _min_cppstd(self):
+        return 17
 
     @property
-    def _source_subfolder(self):
-        return "source_subfolder"
+    def _compilers_minimum_version(self):
+        return {
+            "gcc": "7",
+            "clang": "7",
+            "apple-clang": "10",
+        }
 
-    @property
-    def _build_subfolder(self):
-        return "build_subfolder"
-
-    def export_sources(self):
-        for patch in self.conan_data.get("patches", {}).get(self.version, []):
-            self.copy(patch["patch_file"])
+    #def export_sources(self):
+    #    for patch in self.conan_data.get("patches", {}).get(self.version, []):
+    #        self.copy(patch["patch_file"])
 
     def config_options(self):
         if self.settings.os == "Windows":
             del self.options.fPIC
-        if microsoft.is_msvc(self):
+        if is_msvc(self):
             # Static builds not supported by MSVC
             self.options.shared = True
 
     def configure(self):
         if self.options.shared:
-            del self.options.fPIC
+            self.options.rm_safe("fPIC")
+
         self.options["cairo"].with_glib = True
 
-    @property
-    def _minimum_cpp_standard(self):
-        return 17
-
-    @property
-    def _minimum_compilers_version(self):
-        return {
-            "Visual Studio": "16",
-            "gcc": "7",
-            "clang": "6",
-            "apple-clang": "10",
-        }
-
-    def validate(self):
-        if self.settings.compiler.get_safe("cppstd"):
-            build.check_min_cppstd(self, self._minimum_cpp_standard)
-
-        min_version = self._minimum_compilers_version.get(str(self.settings.compiler))
-        if not min_version:
-            self.output.warn(
-                f"{self.name} recipe lacks information about the {self.settings.compiler} compiler support."
-            )
-        else:
-            if scm.Version(self.settings.compiler.version) < min_version:
-                raise ConanInvalidConfiguration(
-                    f"{self.name} requires C++{self._minimum_cpp_standard} support. " +
-                    f"The current compiler {self.settings.compiler} {self.settings.compiler.version} does not " +
-                    f"support it.")
-
-    def build_requirements(self):
-        self.build_requires("meson/0.62.2")
-        self.build_requires("pkgconf/1.7.4")
+    def layout(self):
+        # src_folder must use the same source folder name the project
+        basic_layout(self, src_folder="src")
 
     def requirements(self):
-        self.requires("cairomm/1.16.1@")
+        self.requires("cairomm/1.16.1")
         # gtkmm has a direct dependency on cairo-gobject which is not explicit in the meson configuration
-        self.requires("cairo/1.17.4")
+        self.requires("cairo/1.17.6")
         self.requires("glibmm/2.72.1")
-        self.requires("glib/2.73.3")
+        self.requires("glib/2.75.0")
         self.requires("gtk/4.7.0")
         self.requires("libsigcpp/3.0.7")
         self.requires("pangomm/2.50.0")
 
+    def validate(self):
+        # validate the minimum cpp standard supported. For C++ projects only
+        if self.settings.compiler.get_safe("cppstd"):
+            check_min_cppstd(self, self._min_cppstd)
+        check_min_vs(self, 191)
+        if not is_msvc(self):
+            minimum_version = self._compilers_minimum_version.get(str(self.settings.compiler), False)
+            if minimum_version and Version(self.settings.compiler.version) < minimum_version:
+                raise ConanInvalidConfiguration(
+                    f"{self.ref} requires C++{self._min_cppstd}, which your compiler does not support."
+                )
+        # in case it does not work in another configuration, it should validated here too
+        if is_msvc(self) and self.info.options.shared:
+            raise ConanInvalidConfiguration(f"{self.ref} can not be built as shared on Visual Studio and msvc.")
+
+    def build_requirements(self):
+        self.build_requires("meson/1.2.1")
+        self.build_requires("pkgconf/2.0.3")
+
     def source(self):
-        files.get(self, **self.conan_data["sources"][self.version], strip_root=True, destination=self._source_subfolder)
+        get(self, **self.conan_data["sources"][self.version], strip_root=True)
 
-    def _patch_sources(self):
-        if microsoft.is_msvc(self):
-            for patch in self.conan_data.get("patches", {}).get(self.version, []):
-                files.patch(self, **patch)
-
-    def _configure_meson(self):
-        meson = Meson(self)
-        defs = {
+    def generate(self):
+        tc = MesonToolchain(self)
+        tc.preprocessor_definitions["MYDEFINE"] = "MYDEF_VALUE"
+        tc.project_options.update({
             "build-demos": 'false',
             "build-tests": 'false'
-        }
-        args=[]
-        args.append("--wrap-mode=nofallback")
-        meson.configure(
-            defs=defs,
-            build_folder=self._build_subfolder,
-            source_folder=self._source_subfolder,
-            pkg_config_paths=[self.install_folder],
-            args=args
-        )
-        return meson
+        })
+        tc.generate()
+
+        tc = PkgConfigDeps(self)
+        tc.generate()
+
+        tc = VirtualBuildEnv(self)
+        tc.generate()
 
     def build(self):
-        self._patch_sources()
-        with tools.environment_append(tools.RunEnvironment(self).vars):
-            meson = self._configure_meson()
-            meson.build()
+        apply_conandata_patches(self)
+        meson = Meson(self)
+        meson.configure()
+        meson.build()
 
     def _get_msvc_toolset(self):
         if self.settings.compiler.get_safe("toolset"):
@@ -158,20 +146,16 @@ class GtkmmConan(ConanFile):
         raise ConanInvalidConfiguration("Cannot get MSVC compiler toolset information")
 
     def package(self):
-        self.copy(pattern="LICENSE", dst="licenses", src=self._source_subfolder)
-        meson = self._configure_meson()
-        with tools.environment_append({
-            "PKG_CONFIG_PATH": self.install_folder,
-            "PATH": [os.path.join(self.package_folder, "bin")]}):
-            meson.install()
+        copy(self, pattern="LICENSE", dst=os.path.join(self.package_folder, "licenses"), src=self.source_folder)
+        meson = Meson(self)
+        meson.install()
 
-        self.copy(pattern="COPYING", src=self._source_subfolder, dst="licenses")
-        files.rmdir(self, os.path.join(self.package_folder, "lib", "pkgconfig"))
-        files.rm(self, "*.pdb", self.package_folder, recursive=True)
+        rmdir(self, os.path.join(self.package_folder, "lib", "pkgconfig"))
+        rm(self, "*.pdb", self.package_folder, recursive=True)
 
     @property
     def _libname(self):
-        if microsoft.is_msvc(self):
+        if is_msvc(self):
             return f"gtkmm-{self._msvc_toolset_suffix}-4.0"
         return "gtkmm-4.0"
 
