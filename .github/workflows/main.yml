@@ -1,0 +1,30 @@
+name: Conan build
+on: [push]
+jobs:
+  build:
+    runs-on: macos-12
+    strategy:
+      matrix:
+        llvm_version: ["11.1.0", "12.0.0", "13.0.0"]
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: 3.12
+
+    - uses: maxim-lobanov/setup-xcode@v1
+      with:
+        xcode-version: 13.1
+
+    - name: install conan
+      run: |
+        pip install conan
+        conan profile detect
+        conan config install conan_config
+      working-directory: recipes/llvm-core/all
+
+    - name: create package
+      run: conan create . --version ${{ matrix.llvm_version }} --profile apple-clang-13
+      working-directory: recipes/llvm-core/all
