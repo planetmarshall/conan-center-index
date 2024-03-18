@@ -308,7 +308,7 @@ class LLVMCoreConan(ConanFile):
         apply_conandata_patches(self)
         cmake = CMake(self)
         cmake.configure()
-        cmake.build(target="LLVMHello")
+        cmake.build()
 
     @property
     def _is_windows(self):
