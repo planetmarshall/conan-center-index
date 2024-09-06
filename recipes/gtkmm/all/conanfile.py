@@ -69,11 +69,11 @@ class GtkmmConan(ConanFile):
         basic_layout(self, src_folder="src")
 
     def requirements(self):
-        self.requires("cairomm/1.16.1")
+        self.requires("cairomm/1.18.0")
         # gtkmm has a direct dependency on cairo-gobject which is not explicit in the meson configuration
-        self.requires("cairo/1.17.6")
-        self.requires("glibmm/2.72.1")
-        self.requires("glib/2.75.0")
+        self.requires("cairo/1.18.0")
+        self.requires("glibmm/2.78.1")
+        self.requires("glib/2.81.0")
         self.requires("gtk/4.7.0")
         self.requires("libsigcpp/3.0.7")
         self.requires("pangomm/2.50.0")
