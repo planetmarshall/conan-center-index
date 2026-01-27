@@ -874,6 +874,14 @@ class QtConan(ConanFile):
         if self.options.config:
             args.append(str(self.options.config))
 
+        cxxflags = self.conf.get("tools.build:cxxflags", check_type=list)
+        if cxxflags:
+            args += [f'QMAKE_CXXFLAGS+="{' '.join(cxxflags)}"']
+
+        ldflags = self.conf.get("tools.build:sharedlinkflags", check_type=list)
+        if ldflags:
+            args += [f'QMAKE_LFLAGS+="{' '.join(ldflags)}"']
+
         os.mkdir("build_folder")
         with chdir(self, "build_folder"):
             if self._settings_build.os == "Macos":
