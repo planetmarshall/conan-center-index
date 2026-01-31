@@ -29,6 +29,7 @@ class GlfwConan(ConanFile):
         "vulkan_static": [True, False],
         "with_x11": [True, False],
         "with_wayland": [True, False],
+        "egl_library": [None, "ANY"]
     }
     default_options = {
         "shared": False,
@@ -36,6 +37,7 @@ class GlfwConan(ConanFile):
         "vulkan_static": False,
         "with_x11": True,
         "with_wayland": False,
+        "egl_library": None
     }
 
     @property
@@ -84,12 +86,13 @@ class GlfwConan(ConanFile):
 
     def validate(self):
         if self.options.get_safe("with_wayland"):
-            xkbcommon_options = self.dependencies["xkbcommon"].options
-            if not xkbcommon_options.with_wayland:
-                raise ConanInvalidConfiguration(f"{self.ref} requires the with_wayland option in xkbcommon to be enabled when the with_wayland option is enabled")
-            if not xkbcommon_options.shared:
-                raise ConanInvalidConfiguration(f"{self.ref} always loads xkbcommon dependencies dynamically and does not support static linkage")
-            if not self.dependencies["wayland"].options.shared:
+            if "xkbcommon" in self.dependencies:
+                xkbcommon_options = self.dependencies["xkbcommon"].options
+                if not xkbcommon_options.with_wayland:
+                    raise ConanInvalidConfiguration(f"{self.ref} requires the with_wayland option in xkbcommon to be enabled when the with_wayland option is enabled")
+                if not xkbcommon_options.shared:
+                    raise ConanInvalidConfiguration(f"{self.ref} always loads xkbcommon dependencies dynamically and does not support static linkage")
+            if "wayland" in self.dependencies and not self.dependencies["wayland"].options.shared:
                 raise ConanInvalidConfiguration(f"{self.ref} always loads wayland dependencies dynamically and does not support static linkage")
 
     def build_requirements(self):
@@ -115,6 +118,10 @@ class GlfwConan(ConanFile):
         tc.cache_variables["GLFW_BUILD_EXAMPLES"] = False
         tc.cache_variables["GLFW_BUILD_TESTS"] = False
         tc.cache_variables["GLFW_INSTALL"] = True
+        tc.cache_variables["GLFW_ENTOS"] = bool(self.settings.os.get_safe("rdk", False))
+        if self.options.egl_library:
+            tc.cache_variables["GLFW_EGL_LIBRARY"] = str(self.options.egl_library)
+
         if Version(self.version) > "3.3.8":
             tc.cache_variables["GLFW_BUILD_X11"] = self.options.get_safe("with_x11", False)
             tc.cache_variables["GLFW_BUILD_WAYLAND"] = self.options.get_safe("with_wayland", False)
@@ -156,7 +163,7 @@ class GlfwConan(ConanFile):
                         "POSITION_INDEPENDENT_CODE ON", "")
         # don't force static link to libgcc if MinGW
         replace_in_file(self, os.path.join(self.source_folder, "src", "CMakeLists.txt"),
-                        "target_link_libraries(glfw PRIVATE \"-static-libgcc\")", "")
+                        "target_link_libraries(glfw PRIVATE \"-static-libgcc\")", "", strict=False)
 
         # Allow to link vulkan-loader into shared glfw
         if self.options.get_safe("vulkan_static"):
