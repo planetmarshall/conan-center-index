@@ -1,4 +1,7 @@
 sources:
+  "20250131":
+    url: "https://github.com/glfw/glfw/archive/9352d8fe93cd443be18157abe81f16500549aec0.tar.gz"
+    sha256: "f66b9e4b40db54c6faed3d3b696d0b285cfb18796f4e544e865815a681b3839e"
   "3.4":
     url: "https://github.com/glfw/glfw/releases/download/3.4/glfw-3.4.zip"
     sha256: "b5ec004b2712fd08e8861dc271428f048775200a2df719ccf575143ba749a3e9"
@@ -9,6 +12,10 @@ sources:
     url: "https://github.com/glfw/glfw/releases/download/3.3.7/glfw-3.3.7.zip"
     sha256: "4ef0c544a8ace9a6cd0e0aef8250090f89fea1bf96e9fc1d9d6f76386c290c9c"
 patches:
+  "20250131":
+    - patch_file: "patches/0000-entos-support.patch"
+      patch_description: "Entos platform support. Based on GLFW-master"
+      patch_source: "https://github.com/entos-xe/glfw"
   "3.3.8":
     - patch_file: "patches/3.3.5-0001-Wayland-Remove-extra-cmake-modules-dependency.patch"
       patch_description: "Remove dependency on extra-cmake-modules to fix generation of Wayland Protocols"
@@ -24,4 +31,3 @@ patches:
       patch_description: "Remove dependency on extra-cmake-modules to fix generation of Wayland Protocols"
       patch_type: "official"
       patch_source: "https://github.com/glfw/glfw/commit/2747e47393cbca2d09db56223e735bd94b21e2eb"
- 

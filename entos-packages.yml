@@ -77,12 +77,9 @@ gettext:
 glad:
   versions:
     - '2.0.8'
-glfw-entos:
-  versions:
-    - '3.4'
 glfw:
   versions:
-    - '3.4'
+    - '20250131'
 glib:
   versions:
     - '2.78.3'
