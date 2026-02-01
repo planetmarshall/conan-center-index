@@ -277,6 +277,7 @@ wayland-protocols:
 xkbcommon:
   versions:
     - '1.5.0'
+    - '1.6.0'
 xkeyboard-config:
   versions:
     - 'system'
