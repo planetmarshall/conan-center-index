@@ -231,7 +231,7 @@ re2:
     - '20230301'
 spdlog:
   versions:
-    - '1.16.0'
+    - '1.17.0'
 spirv-headers:
   versions:
     - '1.4.313.0'
