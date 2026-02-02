@@ -212,8 +212,7 @@ class GlfwConan(ConanFile):
             self.cpp_info.system_libs.append("gdi32")
         elif self.settings.os == "Macos":
             self.cpp_info.frameworks.extend([
-                "AppKit", "Cocoa", "CoreFoundation", "CoreGraphics",
-                "CoreServices", "Foundation", "IOKit",
+                "Cocoa", "CoreFoundation", "QuartzCore", "IOKit",
             ])
         if self.settings.os in ["Linux", "FreeBSD"]:
             if self.options.get_safe("with_x11", True):
