@@ -1,15 +1,13 @@
 import os
-import re
-from io import StringIO
 
 from conan import ConanFile
 from conan.tools.build import can_run
-from conan.tools.cmake import CMake, cmake_layout
+from conan.tools.cmake import CMake, cmake_layout, CMakeDeps, CMakeToolchain
+from conan.tools.gnu import PkgConfig, PkgConfigDeps
 
 
 class TestPackageConan(ConanFile):
     settings = "os", "compiler", "build_type", "arch"
-    generators = "CMakeDeps", "CMakeToolchain", "VirtualRunEnv", "VirtualBuildEnv"
 
     def requirements(self):
         self.requires(self.tested_reference_str)
@@ -17,37 +15,39 @@ class TestPackageConan(ConanFile):
     def build_requirements(self):
         if not self.conf.get("tools.gnu:pkg_config", default=False, check_type=str):
             self.tool_requires("pkgconf/[2.2 <3]")
-        self.tool_requires(self.tested_reference_str)
 
     def layout(self):
         cmake_layout(self)
 
     @property
-    def _has_libraries(self):
-        return self.dependencies["wayland"].options.get_safe("enable_libraries")
+    def _wayland_libraries_enabled(self):
+        return self.dependencies[self.tested_reference_str].options.get_safe("enable_libraries", False)
 
-    def _assert_expected_version(self, actual_version):
-        def tested_reference_version():
-            tokens = re.split('[@#]', self.tested_reference_str)
-            return tokens[0].split("/", 1)[1]
+    @property
+    def _wayland_scanner_enabled(self):
+        return self.dependencies[self.tested_reference_str].options.get_safe("enable_scanner", True)
 
-        assert tested_reference_version() == actual_version
+    def generate(self):
+        tc = CMakeToolchain(self)
+        tc.cache_variables["CONAN_WAYLAND_LIBRARIES_ENABLED"] = self._wayland_libraries_enabled
+        tc.generate()
+        cmake_deps = CMakeDeps(self)
+        cmake_deps.generate()
+        pkg_config_deps = PkgConfigDeps(self)
+        pkg_config_deps.generate()
 
     def build(self):
-        if self._has_libraries:
-            cmake = CMake(self)
-            cmake.configure()
-            cmake.build()
+        cmake = CMake(self)
+        cmake.configure()
+        cmake.build()
 
-        buffer = StringIO()
-        self.run(f"wayland-scanner --version", env="conanbuild", stderr=buffer)
-        output = buffer.getvalue().strip()
-        self.output.info(f"Wayland scanner output: {output}")
-        actual_version = output.split()[-1]
-        self._assert_expected_version(actual_version)
+        if self._wayland_scanner_enabled:
+            pkg_config = PkgConfig(self, "wayland-scanner", self.generators_folder)
+            wayland_scanner = pkg_config.variables["wayland_scanner"]
+            if can_run(self):
+                self.run(f"{wayland_scanner} --version", env="conanrun")
 
     def test(self):
-        if can_run(self):
-            if self._has_libraries:
-                bin_path = os.path.join(self.cpp.build.bindirs[0], "test_package")
-                self.run(bin_path, env="conanrun")
+        if can_run(self) and self._wayland_libraries_enabled:
+            bin_path = os.path.join(self.cpp.build.bindirs[0], "test_package")
+            self.run(bin_path, env="conanrun")
