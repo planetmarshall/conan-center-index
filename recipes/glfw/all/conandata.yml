@@ -1,5 +1,5 @@
 sources:
-  "20250131":
+  "20260131":
     url: "https://github.com/glfw/glfw/archive/9352d8fe93cd443be18157abe81f16500549aec0.tar.gz"
     sha256: "f66b9e4b40db54c6faed3d3b696d0b285cfb18796f4e544e865815a681b3839e"
   "3.4":

@@ -79,7 +79,7 @@ glad:
     - '2.0.8'
 glfw:
   versions:
-    - '20250131'
+    - '20260131'
 glib:
   versions:
     - '2.78.3'
