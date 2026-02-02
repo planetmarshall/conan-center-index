@@ -72,9 +72,8 @@ class GlfwConan(ConanFile):
         cmake_layout(self, src_folder="src")
 
     def requirements(self):
-        # libs=False because glfw does not link to opengl, it
-        # loads it via dlopen or equivalent
-        self.requires("opengl/system", libs=False, transitive_headers=True)
+        if Version(self.version) < "3.4":
+            self.requires("opengl/system", libs=False, transitive_headers=True)
         if self.options.get_safe("vulkan_static"):
             self.requires("vulkan-loader/1.3.268.0")
         if self.settings.os in ["Linux", "FreeBSD"]:
