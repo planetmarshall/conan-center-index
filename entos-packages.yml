@@ -264,6 +264,7 @@ vulkan-validationlayers:
     - '1.4.313.0'
 wayland:
   versions:
+    - '1.22.0'
     - '1.23.92'
 waylandpp:
   versions:
