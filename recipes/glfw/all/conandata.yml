@@ -12,7 +12,7 @@ sources:
     url: "https://github.com/glfw/glfw/releases/download/3.3.7/glfw-3.3.7.zip"
     sha256: "4ef0c544a8ace9a6cd0e0aef8250090f89fea1bf96e9fc1d9d6f76386c290c9c"
 patches:
-  "20250131":
+  "20260131":
     - patch_file: "patches/0000-entos-support.patch"
       patch_description: "Entos platform support. Based on GLFW-master"
       patch_source: "https://github.com/entos-xe/glfw"
