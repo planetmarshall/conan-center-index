@@ -16,6 +16,9 @@ patches:
     - patch_file: "patches/0000-entos-support.patch"
       patch_description: "Entos platform support. Based on GLFW-master"
       patch_source: "https://github.com/entos-xe/glfw"
+    - patch_file: "patches/0001-macos-vulkan.patch"
+      patch_description: "Entos platform support. Based on GLFW-master"
+      patch_source: "https://github.com/entos-xe/glfw"
   "3.3.8":
     - patch_file: "patches/3.3.5-0001-Wayland-Remove-extra-cmake-modules-dependency.patch"
       patch_description: "Remove dependency on extra-cmake-modules to fix generation of Wayland Protocols"
