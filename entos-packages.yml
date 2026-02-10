@@ -244,6 +244,9 @@ spdlog:
 spirv-headers:
   versions:
     - '1.4.313.0'
+spirv-cross:
+  versions:
+    - '1.4.313.0'
 spirv-tools:
   versions:
     - '1.4.313.0'
