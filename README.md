@@ -3,7 +3,7 @@ Conan Center Index (Entos)
 ![build and upload](https://github.com/entos-xe/conan-center-index/actions/workflows/build_and_upload.yml/badge.svg)
 
 
-This is the Sky Entos-XE fork of the [conan center index]().
+This is the Sky Entos-XE fork of the [conan center index](https://github.com/conan-io/conan-center-index).
 It is [recommended best practice](https://docs.conan.io/2/devops/conancenter/hosting_binaries.html) by Conan that
 organizations fork their own copies of CCI to customize package versions and provide updates more
 quickly than can be guaranteed by the PR review process in the public upstream repository
