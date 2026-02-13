@@ -259,6 +259,9 @@ termcap:
 tl-expected:
   versions:
     - '1.1.0'
+tracy:
+  versions:
+    - '0.13.1'
 xz_utils:
   versions:
     - '5.4.5'
