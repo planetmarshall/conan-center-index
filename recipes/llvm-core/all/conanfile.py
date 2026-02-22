@@ -152,6 +152,7 @@ class LLVMCoreConan(ConanFile):
         "fPIC": [True, False],
         "components": ["ANY"],
         "targets": ["ANY"],
+        "enable_lld": [True, False],
         "exceptions": [True, False],
         "rtti": [True, False],
         "threads": [True, False],
@@ -172,6 +173,7 @@ class LLVMCoreConan(ConanFile):
         ],
         "with_ffi": [True, False],
         "with_libedit": [True, False],
+        "with_terminfo": [True, False],
         "with_zlib": [True, False],
         "with_xml2": [True, False],
         "with_z3": [True, False],
@@ -182,6 +184,7 @@ class LLVMCoreConan(ConanFile):
         "fPIC": True,
         "components": "all",
         "targets": "all",
+        "enable_lld": False,
         "exceptions": True,
         "rtti": True,
         "threads": True,
@@ -193,6 +196,7 @@ class LLVMCoreConan(ConanFile):
         "use_sanitizer": "None",
         "with_libedit": True,
         "with_ffi": False,
+        "with_terminfo": False,  # differs from LLVM default
         "with_xml2": True,
         "with_z3": True,
         "with_zlib": True,
@@ -201,11 +205,19 @@ class LLVMCoreConan(ConanFile):
 
     @property
     def _min_cppstd(self):
-        return 17
+        if Version(self.version) >= 19:
+            return 17
+        return 14
 
     @property
     def _compilers_minimum_version(self):
-        return {17: {
+        return {14: {
+            "apple-clang": "10",
+            "clang": "3.4",
+            "gcc": "5",
+            "msvc": "191",
+            "Visual Studio": "15",
+        }, 17: {
             "apple-clang": "10",
             "clang": "6",
             "gcc": "7",
@@ -221,6 +233,12 @@ class LLVMCoreConan(ConanFile):
         if self.settings.os == "Windows":
             del self.options.fPIC
             del self.options.with_libedit  # not supported on windows
+        if Version(self.version) < 15:
+            # Added by https://reviews.llvm.org/D128465
+            del self.options.with_zstd
+        if Version(self.version) >= 19:
+            # removed in https://github.com/llvm/llvm-project/commit/852aaf54071ad072335dcac57f544d4da34c875a
+            del self.options.with_terminfo
 
     def configure(self):
         if self.options.shared:
@@ -245,7 +263,12 @@ class LLVMCoreConan(ConanFile):
 
     def build_requirements(self):
         self.tool_requires("ninja/[>=1.10.2 <2]")
-        self.tool_requires("cmake/[>=3.20 <5]")
+        if Version(self.version) >= 19:
+            self.tool_requires("cmake/[>=3.20 <5]")
+        else:
+            # we require at least 3.17 for correct graphviz output.
+            # Earlier LLVM versions will not build with CMake 4
+            self.tool_requires("cmake/[>=3.17 <4]")
 
     def validate(self):
         if self.settings.compiler.cppstd:
@@ -286,8 +309,12 @@ class LLVMCoreConan(ConanFile):
     def source(self):
         sources = self.conan_data["sources"][self.version]
         version = Version(self.version)
-        get(self, **sources["llvm"], destination='llvm-main', strip_root=True)
-        get(self, **sources["cmake"], destination='cmake', strip_root=True)
+        if version < 15:
+            get(self, **sources, strip_root=True)
+        else:
+            # LLVM >=15 split up several components in its release, including cmake
+            get(self, **sources["llvm"], destination='llvm-main', strip_root=True)
+            get(self, **sources["cmake"], destination='cmake', strip_root=True)
         if version >= 21:
             get(self, **sources["third-party"], destination='third-party', strip_root=True)
 
@@ -314,7 +341,8 @@ class LLVMCoreConan(ConanFile):
 
     @property
     def _all_targets(self):
-        return ";".join(LLVM_TARGETS)
+        targets = LLVM_TARGETS if Version(self.version) >= 14 else LLVM_TARGETS - {"LoongArch", "VE"}
+        return ";".join(targets)
 
     def generate(self):
         tc = CMakeToolchain(self, generator="Ninja")
@@ -338,6 +366,7 @@ class LLVMCoreConan(ConanFile):
             "LLVM_INCLUDE_EXAMPLES": False,
             "LLVM_INCLUDE_TESTS": False,
             "LLVM_ENABLE_IDE": False,
+            "LLVM_ENABLE_LLD": bool(self.options.enable_lld),
             "LLVM_ENABLE_EH": self.options.exceptions,
             "LLVM_ENABLE_RTTI": self.options.rtti,
             "LLVM_ENABLE_THREADS": self.options.threads,
@@ -352,8 +381,11 @@ class LLVMCoreConan(ConanFile):
             "LLVM_ENABLE_FFI": self.options.with_ffi,
             "LLVM_ENABLE_ZLIB": "FORCE_ON" if self.options.with_zlib else False,
             "LLVM_ENABLE_LIBXML2": "FORCE_ON" if self.options.with_xml2 else False,
-            "LLVM_ENABLE_ZSTD": "FORCE_ON" if self.options.get_safe("with_zstd") else False
         }
+        if Version(self.version) < 19:
+            cmake_variables["LLVM_ENABLE_TERMINFO"] = self.options.get_safe("with_terminfo")
+        else:
+            cmake_variables["LLVM_ENABLE_ZSTD"] = "FORCE_ON" if self.options.get_safe("with_zstd") else False
 
         if self.options.targets != "all":
             cmake_variables["LLVM_TARGETS_TO_BUILD"] = self.options.targets
@@ -412,7 +444,10 @@ class LLVMCoreConan(ConanFile):
             set(GRAPHVIZ_IGNORE_TARGETS "{';'.join(exclude_patterns)}")
         """)
         save(self, PurePosixPath(self.build_folder) / "CMakeGraphVizOptions.cmake", graphviz_options)
-        cmake.configure(build_script_folder="llvm-main", cli_args=graphviz_args)
+        if Version(self.version) < 18:
+            cmake.configure(cli_args=graphviz_args)
+        else:
+            cmake.configure(build_script_folder="llvm-main", cli_args=graphviz_args)
         cmake.build()
 
     @property
@@ -421,6 +456,9 @@ class LLVMCoreConan(ConanFile):
 
     @property
     def _llvm_source_folder_path(self):
+        if (Version(self.version) < 18):
+            return PurePosixPath(self.source_folder)
+
         return PurePosixPath(self.source_folder) / "llvm-main"
 
     def _llvm_build_info(self):
