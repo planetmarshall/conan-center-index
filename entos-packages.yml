@@ -34,6 +34,9 @@ c-ares:
 certify:
   versions:
     - 'cci.20201114'
+clang:
+  versions:
+    - '21.1.8'
 cli11:
   versions:
     - '2.4.2'
