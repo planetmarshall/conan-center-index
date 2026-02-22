@@ -369,6 +369,7 @@ class LLVMCoreConan(ConanFile):
             "LLVM_INCLUDE_EXAMPLES": False,
             "LLVM_INCLUDE_TESTS": False,
             "LLVM_ENABLE_IDE": False,
+            "LLVM_ENABLE_LLD": bool(self.options.enable_lld),
             "LLVM_ENABLE_EH": self.options.exceptions,
             "LLVM_ENABLE_RTTI": self.options.rtti,
             "LLVM_ENABLE_THREADS": self.options.threads,
