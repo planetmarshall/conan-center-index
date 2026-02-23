@@ -165,6 +165,9 @@ libxml2:
 libzip:
   versions:
     - '1.11.4'
+llvm-core:
+  versions:
+    - '21.1.8'
 lz4:
   versions:
     - '1.9.4'
