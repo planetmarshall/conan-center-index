@@ -46,6 +46,7 @@ LLVM_TARGETS = {
     "PowerPC",
     "RISCV",
     "Sparc",
+    "SPIRV",
     "SystemZ",
     "VE",
     "WebAssembly",

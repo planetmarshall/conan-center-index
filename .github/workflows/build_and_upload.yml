@@ -28,6 +28,12 @@ jobs:
       - name: Checkout source
         uses: actions/checkout@v4
 
+      - name: Setup ccache
+        uses: hendrikmuhs/ccache-action@v1.2
+        with:
+          evict-old-files: job
+          max-size: 2G
+
       - name: Setup conan and config
         uses: entos-xe/conan-setup-action@db0a63ab409d3f82ab69171e5cd03d8c1ec99397
         with:
