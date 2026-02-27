@@ -7,6 +7,8 @@ qt/*:with_odbc=False
 qt/*:with_pq=False
 qt/*:with_sqlite3=True
 qt/*:with_mysql=False
+# this should typically be enabled but currently fails on CI due to upstream issue
+qt/*:with_fontconfig=False
 llvm-core/*:enable_lld=True
 
 [conf]
