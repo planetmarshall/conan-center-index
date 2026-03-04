@@ -532,43 +532,6 @@ class QtConan(ConanFile):
         get(self, **self.conan_data["sources"][self.version],
             strip_root=True, destination="qt5")
 
-        # Fix macOS compatibility for Qt 5.6.3 - disable Linux-only linker flags
-        if Version(self.version) == "5.6.3":
-            configure_script = os.path.join(
-                self.source_folder, "qt5", "qtbase", "configure"
-            )
-            # Force disable gold linker and new dtags on macOS (they're Linux-only)
-            replace_in_file(
-                self,
-                configure_script,
-                "CFG_USE_GOLD_LINKER=auto\nCFG_ENABLE_NEW_DTAGS=auto",
-                "CFG_USE_GOLD_LINKER=no\nCFG_ENABLE_NEW_DTAGS=no",
-            )
-            # Disable the auto-detection test for --enable-new-dtags that would override the above
-            replace_in_file(
-                self,
-                configure_script,
-                "if linkerSupportsFlag $TEST_COMPILER --enable-new-dtags; then",
-                "if false; then  # Disabled for macOS",
-            )
-
-            # Fix AGL framework issue on modern macOS (AGL is deprecated and removed from SDK)
-            # Remove AGL framework from OpenGL libraries in mkspecs
-            mac_conf = os.path.join(
-                self.source_folder,
-                "qt5",
-                "qtbase",
-                "mkspecs",
-                "common",
-                "mac.conf",
-            )
-            replace_in_file(
-                self,
-                mac_conf,
-                "QMAKE_LIBS_OPENGL       = -framework OpenGL -framework AGL",
-                "QMAKE_LIBS_OPENGL       = -framework OpenGL",
-            )
-
         apply_conandata_patches(self)
 
         if Version(self.version) > "5.6.3":
@@ -713,6 +676,37 @@ class QtConan(ConanFile):
         return None
 
     def build(self):
+        if self.settings.os == "Macos" and Version(self.version) == "5.6.3":
+            configure_script = os.path.join(
+                self.source_folder, "qt5", "qtbase", "configure"
+            )
+            replace_in_file(
+                self,
+                configure_script,
+                "CFG_USE_GOLD_LINKER=auto\nCFG_ENABLE_NEW_DTAGS=auto",
+                "CFG_USE_GOLD_LINKER=no\nCFG_ENABLE_NEW_DTAGS=no",
+            )
+            replace_in_file(
+                self,
+                configure_script,
+                "if linkerSupportsFlag $TEST_COMPILER --enable-new-dtags; then",
+                "if false; then  # Disabled for macOS",
+            )
+
+            mac_conf = os.path.join(
+                self.source_folder,
+                "qt5",
+                "qtbase",
+                "mkspecs",
+                "common",
+                "mac.conf",
+            )
+            replace_in_file(
+                self,
+                mac_conf,
+                "QMAKE_LIBS_OPENGL       = -framework OpenGL -framework AGL",
+                "QMAKE_LIBS_OPENGL       = -framework OpenGL",
+            )
         args = ["-confirm-license", "-silent", "-nomake examples", "-nomake tests",
                 f"-prefix {self.package_folder}"]
         if Version(self.version) == "5.6.3":
