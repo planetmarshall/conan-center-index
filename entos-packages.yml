@@ -71,6 +71,7 @@ flex:
 fmt:
   versions:
     - '12.0.0'
+    - '12.1.0'
 fontconfig:
   versions:
     - '2.15.0'
