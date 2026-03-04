@@ -210,20 +210,20 @@ class QtConan(ConanFile):
         # Qt 5.6.3 is very old - disable features that cause dependency issues
         if Version(self.version) <= "5.6.3":
             # Disable features that didn't exist or have incompatible dependencies
-            self.options.openssl = False
-            self.options.with_pcre2 = False
-            self.options.with_md4c = False
-            self.options.with_zstd = False
-            self.options.with_harfbuzz = False
-            self.options.with_mysql = False
-            self.options.with_pq = False
-            self.options.with_odbc = False
+            del self.options.openssl
+            del self.options.with_pcre2
+            del self.options.with_md4c 
+            del self.options.with_zstd
+            del self.options.with_harfbuzz
+            del self.options.with_mysql
+            del self.options.with_pq
+            del self.options.with_odbc
             # Use Qt bundled versions to avoid old dependency version issues
-            self.options.with_doubleconversion = False
-            self.options.with_freetype = False
-            self.options.with_libjpeg = False
-            self.options.with_libpng = False
-            self.options.with_sqlite3 = False
+            del self.options.with_doubleconversion
+            del self.options.with_freetype
+            del self.options.with_libjpeg
+            del self.options.with_libpng
+            del self.options.with_sqlite3
 
     def _debug_output(self, message):
         if Version(conan_version) >= "2":
@@ -374,7 +374,7 @@ class QtConan(ConanFile):
         if self.options.get_safe("with_fontconfig", False) and not self.options.get_safe("with_freetype", False):
             raise ConanInvalidConfiguration("with_fontconfig cannot be enabled if with_freetype is disabled.")
 
-        if not self.options.with_doubleconversion and self.settings.get_safe("compiler.libcxx") != "libc++":
+        if self.options.get_safe("with_doubleconversion", True) is False and self.settings.get_safe("compiler.libcxx") != "libc++":
             raise ConanInvalidConfiguration("Qt without libc++ needs qt:with_doubleconversion. "
                                             "Either enable qt:with_doubleconversion or switch to libc++")
 
@@ -401,14 +401,14 @@ class QtConan(ConanFile):
             raise ConanInvalidConfiguration("option cross_compile must be set for cross compilation "
                                             "cf https://doc.qt.io/qt-5/configure-options.html#cross-compilation-options")
 
-        if self.options.with_sqlite3 and not self.dependencies["sqlite3"].options.enable_column_metadata:
+        if self.options.get_safe("with_sqlite3", False) and not self.dependencies["sqlite3"].options.enable_column_metadata:
             raise ConanInvalidConfiguration("sqlite3 option enable_column_metadata must be enabled for qt")
 
     def requirements(self):
         self.requires("zlib/[>=1.2.11 <2]")
-        if self.options.openssl:
+        if self.options.get_safe("openssl", False):
             self.requires("openssl/[>=1.1 <4]")
-        if self.options.with_pcre2:
+        if self.options.get_safe("with_pcre2", False):
             self.requires("pcre2/[>=10.42 <11]")
         if self.options.get_safe("with_vulkan"):
             self.requires("vulkan-loader/1.3.268.0")
@@ -418,7 +418,7 @@ class QtConan(ConanFile):
             self.requires("glib/2.78.3")
         # if self.options.with_libiconv: # QTBUG-84708
         #     self.requires("libiconv/1.16")# QTBUG-84708
-        if self.options.with_doubleconversion and not self.options.multiconfiguration:
+        if self.options.get_safe("with_doubleconversion", False) and not self.options.multiconfiguration:
             self.requires("double-conversion/3.3.0")
         if self.options.get_safe("with_freetype", False) and not self.options.multiconfiguration:
             self.requires("freetype/2.13.2")
@@ -429,7 +429,7 @@ class QtConan(ConanFile):
         if self.options.get_safe("with_harfbuzz", False) and not self.options.multiconfiguration:
             self.requires("harfbuzz/[>=8.3.0]")
         if self.options.get_safe("with_libjpeg", False) and not self.options.multiconfiguration:
-            if self.options.with_libjpeg == "libjpeg-turbo":
+            if self.options.get_safe("with_libjpeg", False) == "libjpeg-turbo":
                 if Version(self.version) <= "5.6.3":
                     self.requires("libjpeg-turbo/2.1.5")
                 else:
@@ -444,7 +444,7 @@ class QtConan(ConanFile):
             and not self.options.multiconfiguration
         ):
             self.requires("libpng/[>=1.6 <2]")
-        if self.options.with_sqlite3 and not self.options.multiconfiguration:
+        if self.options.get_safe("with_sqlite3", False) and not self.options.multiconfiguration:
             self.requires("sqlite3/[>=3.45.0 <4]")
         if (
             self.options.get_safe("with_mysql", False) == "mysql"
@@ -453,9 +453,9 @@ class QtConan(ConanFile):
             self.requires("libmysqlclient/8.1.0")
         if self.options.get_safe("with_mysql", False) == "mariadb":
             self.requires("mariadb-connector-c/3.3.3")
-        if self.options.with_pq and Version(self.version) > "5.6.3":
+        if self.options.get_safe("with_pq", False) and Version(self.version) > "5.6.3":
             self.requires("libpq/[>=15.4 <18]")
-        if self.options.with_odbc:
+        if self.options.get_safe("with_odbc", False):
             if self.settings.os != "Windows" and Version(self.version) > "5.6.3":
                 self.requires("odbc/2.3.11")
         if self.options.get_safe("with_openal", False):
@@ -468,7 +468,7 @@ class QtConan(ConanFile):
             self.requires("xkbcommon/1.5.0")
         if self.options.get_safe("opengl", "no") != "no":
             self.requires("opengl/system")
-        if self.options.with_zstd:
+        if self.options.get_safe("with_zstd", False):
             self.requires("zstd/[>=1.5.5 <2]")
         if self.options.qtwebengine and self.settings.os in ["Linux", "FreeBSD"]:
             self.requires("expat/[>=2.6.2 <3]")
@@ -777,7 +777,7 @@ class QtConan(ConanFile):
                 args.append("-no-vulkan")
 
         # openSSL
-        if not self.options.openssl:
+        if not self.options.get_safe("openssl", False):
             args += ["-no-openssl"]
         else:
             if self.dependencies["openssl"].options.shared:
@@ -788,13 +788,13 @@ class QtConan(ConanFile):
         # args.append("--iconv=" + ("gnu" if self.options.with_libiconv else "no"))# QTBUG-84708
 
         args.append("--glib=" + ("yes" if self.options.with_glib else "no"))
-        args.append("--pcre=" + ("system" if self.options.with_pcre2 else "qt"))
+        args.append("--pcre=" + ("system" if self.options.get_safe("with_pcre2", False) else "qt"))
         args.append("--fontconfig=" + ("yes" if self.options.get_safe("with_fontconfig", False) else "no"))
         args.append("--icu=" + ("yes" if self.options.get_safe("with_icu", False) else "no"))
         args.append("--sql-mysql=" + ("yes" if self.options.get_safe("with_mysql", False) else "no"))
         
-        args.append("--sql-psql=" + ("yes" if self.options.with_pq else "no"))
-        args.append("--sql-odbc=" + ("yes" if self.options.with_odbc else "no"))
+        args.append("--sql-psql=" + ("yes" if self.options.get_safe("with_pq", False) else "no"))
+        args.append("--sql-odbc=" + ("yes" if self.options.get_safe("with_odbc", False) else "no"))
         # Explicitly disable other SQL drivers to avoid configure tests failures
         if Version(self.version) == "5.6.3":
             args.append("-no-sql-ibase")  # Firebird/InterBase
@@ -803,7 +803,7 @@ class QtConan(ConanFile):
             args.append("-no-sql-tds")  # Sybase/MS SQL Server
         # zstd support added in Qt 5.13
         if Version(self.version) >= "5.13":
-            args.append("--zstd=" + ("yes" if self.options.with_zstd else "no"))
+            args.append("--zstd=" + ("yes" if self.options.get_safe("with_zstd", False) else "no"))
 
         if self.options.qtmultimedia:
             args.append("--alsa=" + ("yes" if self.options.get_safe("with_libalsa", False) else "no"))
@@ -1225,13 +1225,13 @@ Prefix = ..""")
             self.cpp_info.components[componentname].requires = _get_corrected_reqs(requires)
 
         core_reqs = ["zlib::zlib"]
-        if self.options.with_pcre2:
+        if self.options.get_safe("with_pcre2", False):
             core_reqs.append("pcre2::pcre2")
-        if self.options.with_doubleconversion:
+        if self.options.get_safe("with_doubleconversion", False):
             core_reqs.append("double-conversion::double-conversion")
         if self.options.get_safe("with_icu", False):
             core_reqs.append("icu::icu")
-        if self.options.with_zstd:
+        if self.options.get_safe("with_zstd", False):
             core_reqs.append("zstd::zstd")
         if self.options.with_glib:
             core_reqs.append("glib::glib-2.0")
@@ -1261,9 +1261,9 @@ Prefix = ..""")
             gui_reqs = []
             if self.options.with_dbus:
                 gui_reqs.append("DBus")
-            if self.options.with_freetype:
+            if self.options.get_safe("with_freetype", False):
                 gui_reqs.append("freetype::freetype")
-            if self.options.with_libpng:
+            if self.options.get_safe("with_libpng", False):
                 gui_reqs.append("libpng::libpng")
             if self.options.get_safe("with_fontconfig", False):
                 gui_reqs.append("fontconfig::fontconfig")
@@ -1278,13 +1278,13 @@ Prefix = ..""")
                 gui_reqs.append("vulkan-loader::vulkan-loader")
                 if is_apple_os(self):
                     gui_reqs.append("moltenvk::moltenvk")
-            if self.options.with_harfbuzz:
+            if self.options.get_safe("with_harfbuzz", False):
                 gui_reqs.append("harfbuzz::harfbuzz")
-            if self.options.with_libjpeg == "libjpeg-turbo":
+            if self.options.get_safe("with_libjpeg", False) == "libjpeg-turbo":
                 gui_reqs.append("libjpeg-turbo::libjpeg-turbo")
-            if self.options.with_libjpeg == "libjpeg":
+            if self.options.get_safe("with_libjpeg", False) == "libjpeg":
                 gui_reqs.append("libjpeg::libjpeg")
-            if self.options.with_md4c:
+            if self.options.get_safe("with_md4c", False):
                 gui_reqs.append("md4c::md4c")
             _create_module("Gui", gui_reqs)
             _add_build_module("qtGui", self._cmake_qt5_private_file("Gui"))
@@ -1388,19 +1388,19 @@ Prefix = ..""")
                     _create_plugin("QXcbIntegrationPlugin", "qxcb", "platforms", ["Core", "Gui", "XcbQpa"])
                     _create_plugin("QXcbGlxIntegrationPlugin", "qxcb-glx-integration", "xcbglintegrations", ["Core", "Gui"])
 
-        if self.options.with_sqlite3:
+        if self.options.get_safe("with_sqlite3", False):
             _create_plugin("QSQLiteDriverPlugin", "qsqlite", "sqldrivers", ["sqlite3::sqlite3"])
-        if self.options.with_pq:
+        if self.options.get_safe("with_pq", False):
             _create_plugin("QPSQLDriverPlugin", "qsqlpsql", "sqldrivers", ["libpq::libpq"])
         if self.options.get_safe("with_mysql", False) == "mysql":
             _create_plugin("QMySQLDriverPlugin", "qsqlmysql", "sqldrivers", ["libmysqlclient::libmysqlclient"])
         if self.options.get_safe("with_mysql", False) == "mariadb":
             _create_plugin("QMySQLDriverPlugin", "qsqlmysql", "sqldrivers", ["mariadb-connector-c::mariadb-connector-c"])
-        if self.options.with_odbc:
+        if self.options.get_safe("with_odbc", False):
             if self.settings.os != "Windows":
                 _create_plugin("QODBCDriverPlugin", "qsqlodbc", "sqldrivers", ["odbc::odbc"])
         networkReqs = []
-        if self.options.openssl:
+        if self.options.get_safe("openssl", False):
             networkReqs.append("openssl::openssl")
         if self.settings.os in ['Linux', 'FreeBSD'] and self.options.with_gssapi:
             networkReqs.append("krb5::krb5-gssapi")
@@ -1675,7 +1675,7 @@ Prefix = ..""")
                 self.cpp_info.components["qtNetwork"].frameworks.append("SystemConfiguration")
                 if self.options.with_gssapi:
                     self.cpp_info.components["qtNetwork"].frameworks.append("GSS")
-                if not self.options.openssl: # with SecureTransport
+                if not self.options.get_safe("openssl", False): # with SecureTransport
                     self.cpp_info.components["qtNetwork"].frameworks.append("Security")
             if self.settings.os == "Macos" or (self.settings.os == "iOS" and Version(self.settings.compiler.version) >= "14.0"):
                 self.cpp_info.components["qtCore"].frameworks.append("IOKit")     # qtcore requires "_IORegistryEntryCreateCFProperty", "_IOServiceGetMatchingService" and much more which are in "IOKit" framework
