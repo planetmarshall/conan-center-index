@@ -1344,7 +1344,7 @@ Prefix = ..""")
                 self.cpp_info.components["qtQWindowsIntegrationPlugin"].system_libs = ["advapi32", "dwmapi", "gdi32", "imm32",
                     "ole32", "oleaut32", "shell32", "shlwapi", "user32", "winmm", "winspool", "wtsapi32"]
             elif self.settings.os == "Android":
-                 android_reqs = ["Core", "Gui", "EventDispatcherSupport", "AccessibilitySupport", "FontDatabaseSupport", "EglSupport"]
+                android_reqs = ["Core", "Gui", "EventDispatcherSupport", "AccessibilitySupport", "FontDatabaseSupport", "EglSupport"]
                 if self.options.get_safe("with_vulkan"):
                     android_reqs.append("VulkanSupport")
                 _create_plugin("QAndroidIntegrationPlugin", "qtforandroid", "platforms", android_reqs)
