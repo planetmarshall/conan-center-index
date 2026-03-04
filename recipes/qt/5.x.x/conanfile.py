@@ -578,11 +578,11 @@ class QtConan(ConanFile):
                 "  if (enable_precompiled_headers) {\n    if (is_win) {",
                 "  if (enable_precompiled_headers) {\n    if (false) {"
             )
-        replace_in_file(self, os.path.join(self.source_folder, "qt5", "qtbase", "configure.json"),
-            "-ldbus-1d",
-            "-ldbus-1"
-        )
-        save(self, os.path.join(self.source_folder, "qt5", "qtbase", "mkspecs", "features", "uikit", "bitcode.prf"), "")
+                replace_in_file(self, os.path.join(self.source_folder, "qt5", "qtbase", "configure.json"),
+                    "-ldbus-1d",
+                    "-ldbus-1"
+                )
+                save(self, os.path.join(self.source_folder, "qt5", "qtbase", "mkspecs", "features", "uikit", "bitcode.prf"), "")
 
         # shorten the path to ANGLE to avoid the following error:
         # C:\J2\w\prod-v2\bsr@4\104220\ebfcf\p\qtde01f793a6074\s\qt5\qtbase\src\3rdparty\angle\src\libANGLE\renderer\d3d\d3d11\texture_format_table_autogen.cpp : fatal error C1083: Cannot open compiler generated file: '': Invalid argument
@@ -714,7 +714,9 @@ class QtConan(ConanFile):
 
     def build(self):
         args = ["-confirm-license", "-silent", "-nomake examples", "-nomake tests",
-                f"-prefix {self.package_folder}", "-no-warnings-are-errors"]
+                f"-prefix {self.package_folder}"]
+        if Version(self.version) == "5.6.3":
+            args.append("-no-warnings-are-errors")
         if cross_building(self):
             args.append(f"-extprefix {self.package_folder}")
         args.append("-v")
@@ -796,13 +798,15 @@ class QtConan(ConanFile):
         args.append("--fontconfig=" + ("yes" if self.options.get_safe("with_fontconfig", False) else "no"))
         args.append("--icu=" + ("yes" if self.options.get_safe("with_icu", False) else "no"))
         args.append("--sql-mysql=" + ("yes" if self.options.get_safe("with_mysql", False) else "no"))
+        
         args.append("--sql-psql=" + ("yes" if self.options.with_pq else "no"))
         args.append("--sql-odbc=" + ("yes" if self.options.with_odbc else "no"))
         # Explicitly disable other SQL drivers to avoid configure tests failures
-        args.append("-no-sql-ibase")  # Firebird/InterBase
-        args.append("-no-sql-db2")  # IBM DB2
-        args.append("-no-sql-oci")  # Oracle
-        args.append("-no-sql-tds")  # Sybase/MS SQL Server
+        if Version(self.version) == "5.6.3":
+            args.append("-no-sql-ibase")  # Firebird/InterBase
+            args.append("-no-sql-db2")  # IBM DB2
+            args.append("-no-sql-oci")  # Oracle
+            args.append("-no-sql-tds")  # Sybase/MS SQL Server
         # zstd support added in Qt 5.13
         if Version(self.version) >= "5.13":
             args.append("--zstd=" + ("yes" if self.options.with_zstd else "no"))
