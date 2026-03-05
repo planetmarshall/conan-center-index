@@ -541,11 +541,11 @@ class QtConan(ConanFile):
                 "  if (enable_precompiled_headers) {\n    if (is_win) {",
                 "  if (enable_precompiled_headers) {\n    if (false) {"
             )
-                replace_in_file(self, os.path.join(self.source_folder, "qt5", "qtbase", "configure.json"),
+            replace_in_file(self, os.path.join(self.source_folder, "qt5", "qtbase", "configure.json"),
                     "-ldbus-1d",
                     "-ldbus-1"
-                )
-                save(self, os.path.join(self.source_folder, "qt5", "qtbase", "mkspecs", "features", "uikit", "bitcode.prf"), "")
+            )
+            save(self, os.path.join(self.source_folder, "qt5", "qtbase", "mkspecs", "features", "uikit", "bitcode.prf"), "")
 
         # shorten the path to ANGLE to avoid the following error:
         # C:\J2\w\prod-v2\bsr@4\104220\ebfcf\p\qtde01f793a6074\s\qt5\qtbase\src\3rdparty\angle\src\libANGLE\renderer\d3d\d3d11\texture_format_table_autogen.cpp : fatal error C1083: Cannot open compiler generated file: '': Invalid argument
