@@ -233,6 +233,9 @@ class LLVMCoreConan(ConanFile):
         if self.settings.os == "Windows":
             del self.options.fPIC
             del self.options.with_libedit  # not supported on windows
+        if self.settings.compiler == "apple-clang":
+            # custom linker not supported by apple clang
+            del self.options.enable_lld
         if Version(self.version) < 15:
             # Added by https://reviews.llvm.org/D128465
             del self.options.with_zstd
@@ -366,7 +369,6 @@ class LLVMCoreConan(ConanFile):
             "LLVM_INCLUDE_EXAMPLES": False,
             "LLVM_INCLUDE_TESTS": False,
             "LLVM_ENABLE_IDE": False,
-            "LLVM_ENABLE_LLD": bool(self.options.enable_lld),
             "LLVM_ENABLE_EH": self.options.exceptions,
             "LLVM_ENABLE_RTTI": self.options.rtti,
             "LLVM_ENABLE_THREADS": self.options.threads,
@@ -382,6 +384,9 @@ class LLVMCoreConan(ConanFile):
             "LLVM_ENABLE_ZLIB": "FORCE_ON" if self.options.with_zlib else False,
             "LLVM_ENABLE_LIBXML2": "FORCE_ON" if self.options.with_xml2 else False,
         }
+        enable_lld = self.options.get_safe("enable_lld")
+        if enable_lld is not None:
+            cmake_variables["LLVM_ENABLE_LLD"] = bool(enable_lld)
         if Version(self.version) < 19:
             cmake_variables["LLVM_ENABLE_TERMINFO"] = self.options.get_safe("with_terminfo")
         else:
