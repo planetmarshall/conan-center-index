@@ -16,6 +16,10 @@ sources:
       - "https://ftp.jaist.ac.jp/pub/qtproject/archive/qt/5.15/5.15.18/single/qt-everywhere-opensource-src-5.15.18.tar.xz"
       - "https://mirror.aarnet.edu.au/pub/qtproject/archive/qt/5.15/5.15.18/single/qt-everywhere-opensource-src-5.15.18.tar.xz"
     sha256: "cea1fbabf02455f3f0e8eaa839f5d6f45cdb56b62c8a83af5c1d00ac05f912ea"
+  "5.6.3":
+    url:
+      - "https://download.qt.io/archive/qt/5.6/5.6.3/single/qt-everywhere-opensource-src-5.6.3.tar.xz"
+    sha256: "2fa0cf2e5e8841b29a4be62062c1a65c4f6f2cf1beaf61a5fd661f520cd776d0"
   "5.15.7":
     url:
       - "https://download.qt.io/archive/qt/5.15/5.15.7/single/qt-everywhere-opensource-src-5.15.7.tar.xz"
@@ -24,6 +28,9 @@ sources:
       - "https://ftp.fau.de/qtproject/archive/qt/5.15/5.15.7/single/qt-everywhere-opensource-src-5.15.7.tar.xz"
     sha256: "8a71986676a3f37a198a9113acedbfd5bc5606a459b6b85816d951458adbe9a0"
 patches:
+  "5.6.3":
+    - "base_path": "qt5/qtbase"
+      "patch_file": "patches/5.6.3/qt-5.6.3-c++20.patch"
   "5.15.18":
     - "base_path": "qt5/qtbase"
       "patch_file": "patches/aa2a39dea5.diff"
