@@ -3,19 +3,20 @@ import re
 import textwrap
 from pathlib import Path
 
+from conan.tools.apple import XCRun, is_apple_os
 from conan import ConanFile
 from conan.errors import ConanInvalidConfiguration
-from conan.tools.build import check_min_cppstd
+from conan.tools.build import check_min_cppstd, cross_building
 from conan.tools.cmake import CMake, CMakeConfigDeps, CMakeToolchain, cmake_layout
 from conan.tools.files import (
     copy,
     export_conandata_patches,
     get,
-    replace_in_file,
     rm,
     rmdir,
     save,
     load,
+    apply_conandata_patches,
 )
 from conan.tools.microsoft import is_msvc
 from conan.tools.scm import Version
@@ -96,7 +97,9 @@ class ClangConan(ConanFile):
                 f"{self.ref} requires C++{self._min_cppstd}, which your compiler does not support."
             )
         if "llvm-core" in self.dependencies:
-            if bool(self.dependencies["llvm-core"].options.shared) and not bool(self.options.shared):
+            if bool(self.dependencies["llvm-core"].options.shared) and not bool(
+                self.options.shared
+            ):
                 raise ConanInvalidConfiguration(
                     "Clang cannot be built as a static library when llvm-core is built as a shared library or vice versa."
                 )
@@ -108,26 +111,21 @@ class ClangConan(ConanFile):
 
     def generate(self):
         tc = CMakeToolchain(self)
-        tc.variables.update({
-            "LLVM_INCLUDE_TESTS": False,
-        })
+        tc.variables.update(
+            {
+                "LLVM_INCLUDE_TESTS": False,
+            }
+        )
+        if is_apple_os(self) and not cross_building(self):
+            # https://github.com/llvm/llvm-project/issues/137352
+            tc.variables["DEFAULT_SYSROOT"] = XCRun(self).sdk_path
         tc.generate()
 
         tc = CMakeConfigDeps(self)
         tc.generate()
 
-    def _patch_sources(self):
-        cmake_lists = self._clang_source_folder / "CMakeLists.txt"
-        replace_in_file(
-            self,
-            cmake_lists,
-            """list(APPEND CMAKE_MODULE_PATH "${LLVM_DIR}")""",
-            """list(APPEND CMAKE_MODULE_PATH "${LLVM_DIR};${LLVM_CMAKE_DIR}")""",
-            strict=False,
-        )
-
     def build(self):
-        self._patch_sources()
+        apply_conandata_patches(self)
         cmake = CMake(self)
         cmake.configure(build_script_folder="clang")
         cmake.build()
@@ -237,7 +235,6 @@ class ClangConan(ConanFile):
             rm(self, "*.a", lib_folder)
         else:
             rm(self, "*.so*", lib_folder)
-
 
     def package_info(self):
         def _add_no_rtti_flag(component):
