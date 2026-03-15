@@ -9,8 +9,7 @@ qt/*:with_sqlite3=True
 qt/*:with_mysql=False
 # this should typically be enabled but currently fails on CI due to upstream issue
 qt/*:with_fontconfig=False
-llvm-core/*:enable_lld=True
 
 [conf]
 tools.cmake.cmaketoolchain:generator=Ninja
-tools.cmake.cmaketoolchain:extra_variables={"CMAKE_CXX_COMPILER_LAUNCHER":"ccache", "CMAKE_C_COMPILER_LAUNCHER":"ccache"}
+tools.cmake.cmaketoolchain:extra_variables={"LLVM_ENABLE_LLD": "ON", "CMAKE_CXX_COMPILER_LAUNCHER":"ccache", "CMAKE_C_COMPILER_LAUNCHER":"ccache"}
