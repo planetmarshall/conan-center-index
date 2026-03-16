@@ -367,7 +367,6 @@ class ClangConan(ConanFile):
 
         build_info = self._read_build_info()
         components = build_info["components"]
-        self.output.info(components)
         for component, data in components.items():
             self.cpp_info.components[component].set_property(
                 "cmake_target_name", component
