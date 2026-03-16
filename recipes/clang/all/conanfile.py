@@ -216,10 +216,12 @@ class ClangConan(ConanFile):
 
     def generate(self):
         tc = CMakeToolchain(self)
+        llvm = self.dependencies["llvm-core"]
         tc.cache_variables.update(
             {
                 "CLANG_LINK_CLANG_DYLIB": bool(self.options.shared),
                 "LLVM_INCLUDE_TESTS": False,
+                "CLANG_ENABLE_LIBXML2": bool(llvm.options.with_xml2)
             }
         )
         if is_apple_os(self) and not cross_building(self):
