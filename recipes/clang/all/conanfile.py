@@ -183,8 +183,9 @@ class ClangConan(ConanFile):
     def requirements(self):
         self.requires(f"llvm-core/{self.version}", transitive_headers=True)
 
-
     def build_requirements(self):
+        # needed to build c-index-test but not actually required by any components
+        self.test_requires(f"libxml2/[>2.12.4 <3]")
         self.tool_requires("cmake/[>=3.20]")
 
     def validate(self):
