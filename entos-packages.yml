@@ -117,6 +117,9 @@ harfbuzz:
 icu:
   versions:
     - '74.2'
+iwyu:
+  versions:
+    - '0.25'
 launchdarkly:
   versions:
     - '3.8.2'
