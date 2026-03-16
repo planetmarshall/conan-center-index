@@ -183,9 +183,8 @@ class ClangConan(ConanFile):
     def requirements(self):
         self.requires(f"llvm-core/{self.version}", transitive_headers=True)
 
+
     def build_requirements(self):
-        # needed to build c-index-test but not actually required by any components
-        self.test_requires(f"libxml2/[>2.12.4 <3]")
         self.tool_requires("cmake/[>=3.20]")
 
     def validate(self):
@@ -216,10 +215,12 @@ class ClangConan(ConanFile):
 
     def generate(self):
         tc = CMakeToolchain(self)
+        llvm = self.dependencies["llvm-core"]
         tc.cache_variables.update(
             {
                 "CLANG_LINK_CLANG_DYLIB": bool(self.options.shared),
                 "LLVM_INCLUDE_TESTS": False,
+                "CLANG_ENABLE_LIBXML2": bool(llvm.options.with_xml2)
             }
         )
         if is_apple_os(self) and not cross_building(self):
