@@ -142,10 +142,12 @@ class ClangConan(ConanFile):
     options = {
         "shared": [True, False],
         "fPIC": [True, False],
+        "components": [None, "ANY"]
     }
     default_options = {
         "shared": False,
         "fPIC": True,
+        "components": None
     }
 
     @property
@@ -187,6 +189,7 @@ class ClangConan(ConanFile):
         # needed to build c-index-test but not actually required by any components
         self.test_requires(f"libxml2/[>2.12.4 <3]")
         self.tool_requires("cmake/[>=3.20]")
+        self.tool_requires("ninja/[>=1.13.0]")
 
     def validate(self):
         if self.settings.compiler.cppstd:
@@ -214,6 +217,13 @@ class ClangConan(ConanFile):
         get(self, **sources["clang"], destination="clang", strip_root=True)
         get(self, **sources["cmake"], destination="cmake", strip_root=True)
 
+    @property
+    def _distribution_components(self):
+        if bool(self.options.components):
+            components = str(self.options.components).split(";")
+            return ";".join(components + ["clang-cmake-exports"])
+        return None
+
     def generate(self):
         tc = CMakeToolchain(self)
         llvm = self.dependencies["llvm-core"]
@@ -227,6 +237,9 @@ class ClangConan(ConanFile):
         if is_apple_os(self) and not cross_building(self):
             # https://github.com/llvm/llvm-project/issues/137352
             tc.variables["DEFAULT_SYSROOT"] = XCRun(self).sdk_path
+
+        if self._distribution_components is not None:
+            tc.cache_variables["LLVM_DISTRIBUTION_COMPONENTS"] = self._distribution_components
         tc.generate()
 
         tc = CMakeConfigDeps(self)
@@ -257,7 +270,10 @@ class ClangConan(ConanFile):
             graphviz_options,
         )
         cmake.configure(build_script_folder="clang", cli_args=graphviz_args)
-        cmake.build()
+        if self._distribution_components is not None:
+            cmake.build(target="distribution")
+        else:
+            cmake.build()
 
     @property
     def _package_folder_path(self):
@@ -325,7 +341,12 @@ class ClangConan(ConanFile):
             (package_folder / "licenses").as_posix(),
         )
         cmake = CMake(self)
-        cmake.install()
+        if self._distribution_components is not None:
+            strip = bool(self.conf.get("tools.build:install_strip"))
+            target = "install-distribution-stripped" if strip else "install-distribution"
+            self.run(f"ninja -C {self.build_folder} {target}")
+        else:
+            cmake.install()
         self._write_build_info()
 
         self._create_cmake_build_module(
