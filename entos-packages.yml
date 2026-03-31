@@ -9,7 +9,7 @@ automake:
     - '1.16.5'
 b2:
   versions:
-    - '5.4.0'
+    - '5.4.2'
 benchmark:
   versions:
     - '1.9.4'
