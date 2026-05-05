@@ -1,0 +1,55 @@
+# Generated with preset: best-experience
+#
+# This preset optimizes for minimal disruption while maintaining security:
+# - Cooldown periods: 7/14/30 days for patch/minor/major updates
+# - Security updates are immediate (no cooldown)
+# - Dependencies grouped by type to reduce PR volume
+# - Weekly updates on Mondays
+# - Limited to 5 open PRs per ecosystem
+# - Semantic commit messages (deps/deps-dev)
+# - Automatic rebase to keep PRs current
+# - Pre-release versions ignored by default
+#
+# To customize these settings, use CLI flags or edit this file directly.
+# Documentation: https://docs.github.com/en/code-security/dependabot/dependabot-version-updates/configuration-options-for-the-dependabot.yml-file
+
+# Configuration file version
+version: 2
+# Package ecosystem update configurations
+updates:
+  - package-ecosystem: pip
+    directory: /recipes/cpython/all/test_package
+    schedule:
+      interval: weekly
+      day: monday
+    cooldown:
+      default-days: 14
+      semver-major-days: 30
+      semver-minor-days: 14
+      semver-patch-days: 7
+    open-pull-requests-limit: 5
+    allow:
+      - dependency-type: all
+    labels:
+      - pip
+      - dependencies
+    commit-message:
+      prefix: deps
+      prefix-development: deps-dev
+      include: scope
+    groups:
+      production:
+        patterns:
+          - '*'
+        update-types:
+          - minor
+          - patch
+        dependency-type: production
+      development:
+        patterns:
+          - '*'
+        update-types:
+          - minor
+          - patch
+          - major
+        dependency-type: development
