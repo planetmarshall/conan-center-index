@@ -438,7 +438,7 @@ class QtConan(ConanFile):
                 if Version(self.version) <= "5.6.3":
                     self.requires("libjpeg/9d")
                 else:
-                    self.requires("libjpeg/9e")
+                    self.requires("libjpeg/[>=9e]")
         if (
             self.options.get_safe("with_libpng", False)
             and not self.options.multiconfiguration
