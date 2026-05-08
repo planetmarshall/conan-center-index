@@ -45,12 +45,12 @@ jobs:
         run: python entos-packages.py --export
 
       - name: Get changed files
-        if: ${{ github.event_name == 'pull_request' && github.head_ref != 'upstream-update' }}
+        if: ${{ github.event_name == 'pull_request' && github.head_ref != 'master' }}
         id: changed-files
         uses: comcast-github-actions-community/tj-actions_changed-files@v46.0.1
 
       - name: Build updated packages
-        if: ${{ github.event_name == 'pull_request' && github.head_ref != 'upstream-update' }}
+        if: ${{ github.event_name == 'pull_request' && github.head_ref != 'master' }}
         run: |
           apt-get update -y
           python entos-packages.py --build="${{ steps.changed-files.outputs.all_changed_files }}"

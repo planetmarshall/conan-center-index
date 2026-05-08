@@ -1,0 +1,62 @@
+name: Sync fork from upstream
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "3 8 1 * *" # 8:03 on the first day of the month
+jobs:
+  sync-upstream:
+    runs-on: comcast-ubuntu-latest
+
+    steps:
+      - name: Checkout the repository
+        uses: actions/checkout@v6
+        with:
+          ref: entos-master
+
+      - name: Add the upstream remote
+        run: |
+          git remote add upstream https://github.com/conan-io/conan-center-index.git
+          git fetch upstream
+
+      - name: Create a PR to merge the upstream changes
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git checkout master
+          git reset --hard upstream/master
+          git push -uf origin master
+          # use curl to create a PR. gh cli which uses graphql appears to have authentication issues
+          curl -L \
+            -X POST \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: Bearer ${GH_TOKEN}" \
+            -H "X-GitHub-Api-Version: 2026-03-10" \
+            https://api.github.com/repos/entos-xe/conan-center-index/pulls \
+            -d '{"title":"Auto-update: Update from upstream","body":"Update from upstream [CCI](https://github.com/conan-io/conan-center-index)","head":"master","base":"entos-master"}' \
+            | tee response.json
+
+      - name: Check the response
+        run: |
+          if [[ "$( jq '.status' response.json )" != "null" ]]; then
+            PR_ERROR="$( jq '.errors[0].message' response.json )"
+            PR_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+            SLACK_MESSAGE="<${PR_URL}|CCI Upstream Sync PR> error: ${PR_ERROR}"
+            echo "SLACK_MESSAGE=${SLACK_MESSAGE}" >> $GITHUB_ENV
+            echo "::error ::${PR_ERROR}"
+            exit 1
+          fi
+          PR_URL="$( jq --raw-output '.html_url' response.json )"
+          SLACK_MESSAGE="A conan <${PR_URL}|CCI Upstream Sync PR> is ready"
+          echo "SLACK_MESSAGE=${SLACK_MESSAGE}" >> $GITHUB_ENV
+
+      - name: Post a notification that the PR is ready
+        if: ${{ !cancelled() }}
+        uses: slackapi/slack-github-action@v3.0.2
+        with:
+          method: chat.postMessage
+          token: ${{ secrets.SLACK_BOT_TOKEN }}
+          errors: true
+          payload: |
+            channel: ${{ vars.SLACK_CHANNEL_ID }}
+            text: ${{ toJSON(env.SLACK_MESSAGE) }}
