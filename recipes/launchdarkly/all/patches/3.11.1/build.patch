@@ -1,0 +1,74 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index a5c29b24..d5ede80e 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -196,15 +196,13 @@ if (LD_BUILD_SHARED_LIBS)
+     endif ()
+ endif ()
+ 
+-set(Boost_USE_MULTITHREADED ON)
+-set(Boost_USE_STATIC_RUNTIME OFF)
+-
+ find_package(Boost 1.81 REQUIRED COMPONENTS json url coroutine)
+ message(STATUS "LaunchDarkly: using Boost v${Boost_VERSION}")
+ 
+ set(FOXY_BUILD_TESTING OFF)
+ add_subdirectory(vendor/foxy)
+ 
++find_package(tl-expected REQUIRED)
+ 
+ # Common, internal, and server-sent-events are built as "object" libraries.
+ add_subdirectory(libs/common)
+@@ -231,7 +229,6 @@ endif ()
+ # Built as static or shared depending on LD_BUILD_SHARED_LIBS variable.
+ # This target "links" in common, internal, and sse as object libraries.
+ add_subdirectory(libs/client-sdk)
+-add_subdirectory(libs/server-sdk)
+ 
+ if (LD_BUILD_CONTRACT_TESTS)
+     message(STATUS "LaunchDarkly: building contract tests")
+diff --git a/libs/client-sdk/CMakeLists.txt b/libs/client-sdk/CMakeLists.txt
+index f6a4bd26..9660d42a 100644
+--- a/libs/client-sdk/CMakeLists.txt
++++ b/libs/client-sdk/CMakeLists.txt
+@@ -24,9 +24,6 @@ endif ()
+ #set(CMAKE_FILES "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
+ #set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} ${CMAKE_FILES})
+ 
+-# Needed to fetch external dependencies. 
+-include(FetchContent)
+-
+ # Add main SDK sources.
+ add_subdirectory(src)
+ 
+diff --git a/libs/common/CMakeLists.txt b/libs/common/CMakeLists.txt
+index d03a4abc..f6ddc66d 100644
+--- a/libs/common/CMakeLists.txt
++++ b/libs/common/CMakeLists.txt
+@@ -21,11 +21,6 @@ if (CMAKE_PROJECT_NAME STREQUAL PROJECT_NAME)
+     set_property(GLOBAL PROPERTY USE_FOLDERS ON)
+ endif ()
+ 
+-# Needed to fetch external dependencies.
+-include(FetchContent)
+-
+-include(${CMAKE_FILES}/expected.cmake)
+-
+ # Add main SDK sources.
+ add_subdirectory(src)
+ 
+diff --git a/libs/internal/CMakeLists.txt b/libs/internal/CMakeLists.txt
+index 2be93f63..18e5f69b 100644
+--- a/libs/internal/CMakeLists.txt
++++ b/libs/internal/CMakeLists.txt
+@@ -21,10 +21,6 @@ if (CMAKE_PROJECT_NAME STREQUAL PROJECT_NAME)
+     set_property(GLOBAL PROPERTY USE_FOLDERS ON)
+ endif ()
+ 
+-
+-# Needed to fetch external dependencies. 
+-include(FetchContent)
+-
+ # Add main SDK sources.
+ add_subdirectory(src)
+ 
