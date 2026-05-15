@@ -1,5 +1,5 @@
 from conan import ConanFile
-from conan.errors import ConanException, ConanInvalidConfiguration
+from conan.errors import ConanInvalidConfiguration
 from conan.tools.files import copy, rm, rmdir, export_conandata_patches, apply_conandata_patches
 from conan.tools.build import check_min_cppstd
 from conan.tools.files import get
@@ -7,7 +7,6 @@ from conan.tools.scm import Version
 from conan.tools.cmake import CMake, CMakeDeps, CMakeToolchain, cmake_layout
 
 import os
-from urllib.parse import urlsplit, urlunsplit
 
 required_conan_version = ">=2.0.0"
 

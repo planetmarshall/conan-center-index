@@ -7,9 +7,13 @@ sources:
     sha256: "d511e88196d7d04f639844ec7b2fe3e906d4e7017fdf6d3a287ea3562a04aa32"
 patches:
   "3.11.1":
-    - patch_file: "patches/3.11.1/build.patch"
+    - patch_file: "patches/3.11.1/0000-build.patch"
       patch_type: portability
       patch_description: "various patches to disable remote fetching of sources"
+    - patch_file: "patches/3.11.1/0001-foxy-boost-1.90.patch"
+      patch_type: portability
+      patch_description: "fix compatibility of the foxy subproject with boost 1.90"
+      patch_source: https://github.com/launchdarkly/cpp-sdks/pull/506
   "3.8.2":
     - patch_file: "patches/3.8.2/no-fetch-content-3.8.2.patch"
       patch_type: portability

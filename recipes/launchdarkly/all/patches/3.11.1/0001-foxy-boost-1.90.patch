@@ -1,0 +1,480 @@
+diff --git a/.github/actions/install-openssl/action.yml b/.github/actions/install-openssl/action.yml
+index 6d10d813..3674a8b0 100644
+--- a/.github/actions/install-openssl/action.yml
++++ b/.github/actions/install-openssl/action.yml
+@@ -32,7 +32,7 @@ runs:
+       if: runner.os == 'Windows'
+       shell: bash
+       run: |
+-        choco install openssl --version 3.5.4 -y --no-progress
++        choco install openssl --version 3.6.1 -y --no-progress
+         if [ -d "C:\Program Files\OpenSSL-Win64" ]; then
+           echo "OPENSSL_ROOT_DIR=C:\Program Files\OpenSSL-Win64" >> $GITHUB_OUTPUT
+         else
+diff --git a/.github/actions/sdk-release/action.yml b/.github/actions/sdk-release/action.yml
+index 7ade5eb9..c4dd29aa 100644
+--- a/.github/actions/sdk-release/action.yml
++++ b/.github/actions/sdk-release/action.yml
+@@ -18,6 +18,10 @@ inputs:
+     required: true
+   sdk_cmake_target:
+     description: 'CMake target of the sdk, e.g. launchdarkly-cpp-client.'
++  mac_artifact_arch:
++    description: 'Architecture label for macOS artifacts (x64 or arm64).'
++    required: false
++    default: 'x64'
+ outputs:
+   hashes-linux:
+     description: "base64-encoded sha256 hash of linux build artifacts"
+@@ -272,21 +276,21 @@ runs:
+         OPENSSL_ROOT_DIR: ${{ steps.install-openssl.outputs.OPENSSL_ROOT_DIR }}
+         CURL_ROOT: ${{ steps.install-curl.outputs.CURL_ROOT }}
+ 
+-    - name: Archive Release Mac - AppleClang/x64/Static
++    - name: Archive Release Mac - AppleClang/${{ inputs.mac_artifact_arch }}/Static
+       if: runner.os == 'macOS'
+       uses: thedoctor0/zip-release@0.7.1
+       with:
+         path: 'build-static/release'
+         type: 'zip'
+-        filename: 'mac-clang-x64-static.zip'
++        filename: 'mac-clang-${{ inputs.mac_artifact_arch }}-static.zip'
+ 
+-    - name: Archive Release Mac - AppleClang/x64/Dynamic
++    - name: Archive Release Mac - AppleClang/${{ inputs.mac_artifact_arch }}/Dynamic
+       if: runner.os == 'macOS'
+       uses: thedoctor0/zip-release@0.7.1
+       with:
+         path: 'build-dynamic/release'
+         type: 'zip'
+-        filename: 'mac-clang-x64-dynamic.zip'
++        filename: 'mac-clang-${{ inputs.mac_artifact_arch }}-dynamic.zip'
+ 
+     - name: Determine CURL artifact suffix for server SDK
+       if: runner.os == 'macOS'
+@@ -299,21 +303,21 @@ runs:
+           echo "suffix=" >> $GITHUB_OUTPUT
+         fi
+ 
+-    - name: Archive Release Mac - AppleClang/x64/Static/CURL
++    - name: Archive Release Mac - AppleClang/${{ inputs.mac_artifact_arch }}/Static/CURL
+       if: runner.os == 'macOS'
+       uses: thedoctor0/zip-release@0.7.1
+       with:
+         path: 'build-static-curl/release'
+         type: 'zip'
+-        filename: 'mac-clang-x64-static-curl${{ steps.curl-suffix-macos.outputs.suffix }}.zip'
++        filename: 'mac-clang-${{ inputs.mac_artifact_arch }}-static-curl${{ steps.curl-suffix-macos.outputs.suffix }}.zip'
+ 
+-    - name: Archive Release Mac - AppleClang/x64/Dynamic/CURL
++    - name: Archive Release Mac - AppleClang/${{ inputs.mac_artifact_arch }}/Dynamic/CURL
+       if: runner.os == 'macOS'
+       uses: thedoctor0/zip-release@0.7.1
+       with:
+         path: 'build-dynamic-curl/release'
+         type: 'zip'
+-        filename: 'mac-clang-x64-dynamic-curl${{ steps.curl-suffix-macos.outputs.suffix }}.zip'
++        filename: 'mac-clang-${{ inputs.mac_artifact_arch }}-dynamic-curl${{ steps.curl-suffix-macos.outputs.suffix }}.zip'
+ 
+     - name: Hash Mac Build Artifacts for provenance
+       if: runner.os == 'macOS'
+@@ -321,7 +325,8 @@ runs:
+       id: hash-macos
+       run: |
+         CURL_SUFFIX="${{ steps.curl-suffix-macos.outputs.suffix }}"
+-        echo "hashes-macos=$(shasum -a 256 mac-clang-x64-static.zip mac-clang-x64-dynamic.zip mac-clang-x64-static-curl${CURL_SUFFIX}.zip mac-clang-x64-dynamic-curl${CURL_SUFFIX}.zip | base64 -b 0)" >> "$GITHUB_OUTPUT"
++        ARCH="${{ inputs.mac_artifact_arch }}"
++        echo "hashes-macos=$(shasum -a 256 mac-clang-${ARCH}-static.zip mac-clang-${ARCH}-dynamic.zip mac-clang-${ARCH}-static-curl${CURL_SUFFIX}.zip mac-clang-${ARCH}-dynamic-curl${CURL_SUFFIX}.zip | base64 -b 0)" >> "$GITHUB_OUTPUT"
+ 
+     - name: Upload Mac Build Artifacts
+       if: runner.os == 'macOS'
+@@ -329,6 +334,7 @@ runs:
+       run: |
+         ls
+         CURL_SUFFIX="${{ steps.curl-suffix-macos.outputs.suffix }}"
+-        gh release upload ${{ inputs.tag_name }} mac-clang-x64-static.zip mac-clang-x64-dynamic.zip mac-clang-x64-static-curl${CURL_SUFFIX}.zip mac-clang-x64-dynamic-curl${CURL_SUFFIX}.zip --clobber
++        ARCH="${{ inputs.mac_artifact_arch }}"
++        gh release upload ${{ inputs.tag_name }} mac-clang-${ARCH}-static.zip mac-clang-${ARCH}-dynamic.zip mac-clang-${ARCH}-static-curl${CURL_SUFFIX}.zip mac-clang-${ARCH}-dynamic-curl${CURL_SUFFIX}.zip --clobber
+       env:
+         GH_TOKEN: ${{ inputs.github_token }}
+diff --git a/.github/workflows/client.yml b/.github/workflows/client.yml
+index a40f4ddb..beffa64d 100644
+--- a/.github/workflows/client.yml
++++ b/.github/workflows/client.yml
+@@ -80,7 +80,7 @@ jobs:
+           simulate_release: true
+ 
+   build-test-client-mac:
+-    runs-on: macos-13
++    runs-on: macos-15
+     steps:
+       # https://github.com/actions/checkout/releases/tag/v4.3.0
+       - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955
+@@ -91,7 +91,7 @@ jobs:
+           simulate_release: true
+ 
+   build-test-client-mac-curl:
+-    runs-on: macos-13
++    runs-on: macos-15
+     steps:
+       # https://github.com/actions/checkout/releases/tag/v4.3.0
+       - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955
+diff --git a/.github/workflows/cmake.yml b/.github/workflows/cmake.yml
+index 29761f85..15cc8780 100644
+--- a/.github/workflows/cmake.yml
++++ b/.github/workflows/cmake.yml
+@@ -30,7 +30,6 @@ jobs:
+       - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955
+       - uses: ./.github/actions/install-curl
+         id: install-curl
+-        run: sudo apt-get update && sudo apt-get install -y libcurl4-openssl-dev
+       - uses: ./.github/actions/cmake-test
+         env:
+           CURL_ROOT: ${{ steps.install-curl.outputs.CURL_ROOT }}
+@@ -40,7 +39,7 @@ jobs:
+           cmake_extra_args: '-DLD_CURL_NETWORKING=ON'
+ 
+   test-macos:
+-    runs-on: macos-13
++    runs-on: macos-15
+     steps:
+       # https://github.com/actions/checkout/releases/tag/v4.3.0
+       - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955
+@@ -49,7 +48,7 @@ jobs:
+           platform_version: '12'
+ 
+   test-macos-curl:
+-    runs-on: macos-13
++    runs-on: macos-15
+     steps:
+       # https://github.com/actions/checkout/releases/tag/v4.3.0
+       - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955
+diff --git a/.github/workflows/hello-apps.yml b/.github/workflows/hello-apps.yml
+index c8bfab49..aba5ab61 100644
+--- a/.github/workflows/hello-apps.yml
++++ b/.github/workflows/hello-apps.yml
+@@ -15,7 +15,7 @@ jobs:
+   smoketest:
+     strategy:
+       matrix:
+-        os: [ "ubuntu-22.04", "macos-13", "windows-2022" ]
++        os: [ "ubuntu-22.04", "macos-15", "windows-2022" ]
+       fail-fast: false
+     runs-on: ${{ matrix.os }}
+     steps:
+diff --git a/.github/workflows/manual-sdk-release-artifacts.yml b/.github/workflows/manual-sdk-release-artifacts.yml
+index 947ca0a7..a265bf2d 100644
+--- a/.github/workflows/manual-sdk-release-artifacts.yml
++++ b/.github/workflows/manual-sdk-release-artifacts.yml
+@@ -38,7 +38,7 @@ jobs:
+     strategy:
+       matrix:
+         # Each of the platforms for which release-artifacts need generated.
+-        os: [ ubuntu-22.04, windows-2022, macos-13 ]
++        os: [ ubuntu-22.04, windows-2022, macos-15-large ]
+     runs-on: ${{ matrix.os }}
+     outputs:
+       hashes-linux: ${{ steps.release-sdk.outputs.hashes-linux }}
+@@ -58,6 +58,27 @@ jobs:
+           github_token: ${{secrets.GITHUB_TOKEN}}
+           sdk_path: ${{ needs.split-input.outputs.sdk_path}}
+           sdk_cmake_target: ${{ needs.split-input.outputs.sdk_cmake_target}}
++
++  release-sdk-mac-arm64:
++    needs: split-input
++    runs-on: macos-15
++    outputs:
++      hashes-macos-arm64: ${{ steps.release-sdk.outputs.hashes-macos }}
++    steps:
++      # https://github.com/actions/checkout/releases/tag/v4.3.0
++      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955
++        with:
++          ref: ${{ inputs.tag }}
++      - id: release-sdk
++        name: Full release of ${{ needs.split-input.outputs.sdk_path }} (macOS arm64)
++        uses: ./.github/actions/sdk-release
++        with:
++          tag_name: ${{ inputs.tag }}
++          github_token: ${{secrets.GITHUB_TOKEN}}
++          sdk_path: ${{ needs.split-input.outputs.sdk_path}}
++          sdk_cmake_target: ${{ needs.split-input.outputs.sdk_cmake_target}}
++          mac_artifact_arch: 'arm64'
++
+   release-sdk-provenance:
+     needs: [ 'release-sdk' ]
+     strategy:
+@@ -74,3 +95,16 @@ jobs:
+       upload-assets: true
+       upload-tag-name: ${{ inputs.tag }}
+       provenance-name: ${{ format('{0}-multiple-provenance.intoto.jsonl', matrix.os) }}
++
++  release-sdk-mac-arm64-provenance:
++    needs: [ 'release-sdk-mac-arm64' ]
++    permissions:
++      actions: read
++      id-token: write
++      contents: write
++    uses: slsa-framework/slsa-github-generator/.github/workflows/generator_generic_slsa3.yml@v2.1.0
++    with:
++      base64-subjects: "${{ needs.release-sdk-mac-arm64.outputs.hashes-macos-arm64 }}"
++      upload-assets: true
++      upload-tag-name: ${{ inputs.tag }}
++      provenance-name: 'macos-arm64-multiple-provenance.intoto.jsonl'
+diff --git a/.github/workflows/release-please.yml b/.github/workflows/release-please.yml
+index b8fa2f25..7401422a 100644
+--- a/.github/workflows/release-please.yml
++++ b/.github/workflows/release-please.yml
+@@ -27,7 +27,7 @@ jobs:
+     strategy:
+       matrix:
+         # Each of the platforms for which release-artifacts need generated.
+-        os: [ ubuntu-22.04, windows-2022, macos-13 ]
++        os: [ ubuntu-22.04, windows-2022, macos-15-large ]
+     runs-on: ${{ matrix.os }}
+     needs: [ 'release-please' ]
+     if: ${{ needs.release-please.outputs.package-client-released == 'true'}}
+@@ -48,11 +48,30 @@ jobs:
+           sdk_path: 'libs/client-sdk'
+           sdk_cmake_target: 'launchdarkly-cpp-client'
+ 
++  release-client-mac-arm64:
++    runs-on: macos-15
++    needs: [ 'release-please' ]
++    if: ${{ needs.release-please.outputs.package-client-released == 'true'}}
++    outputs:
++      hashes-macos-arm64: ${{ steps.release-client.outputs.hashes-macos }}
++    steps:
++      # https://github.com/actions/checkout/releases/tag/v4.3.0
++      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955
++      - id: release-client
++        name: Full release of libs/client-sdk (macOS arm64)
++        uses: ./.github/actions/sdk-release
++        with:
++          tag_name: ${{ needs.release-please.outputs.package-client-tag }}
++          github_token: ${{secrets.GITHUB_TOKEN}}
++          sdk_path: 'libs/client-sdk'
++          sdk_cmake_target: 'launchdarkly-cpp-client'
++          mac_artifact_arch: 'arm64'
++
+   release-server:
+     strategy:
+       matrix:
+         # Each of the platforms for which release-artifacts need generated.
+-        os: [ ubuntu-22.04, windows-2022, macos-13 ]
++        os: [ ubuntu-22.04, windows-2022, macos-15-large ]
+     runs-on: ${{ matrix.os }}
+     needs: [ 'release-please' ]
+     if: ${{ needs.release-please.outputs.package-server-released == 'true'}}
+@@ -73,11 +92,30 @@ jobs:
+           sdk_path: 'libs/server-sdk'
+           sdk_cmake_target: 'launchdarkly-cpp-server'
+ 
++  release-server-mac-arm64:
++    runs-on: macos-15
++    needs: [ 'release-please' ]
++    if: ${{ needs.release-please.outputs.package-server-released == 'true'}}
++    outputs:
++      hashes-macos-arm64: ${{ steps.release-server.outputs.hashes-macos }}
++    steps:
++      # https://github.com/actions/checkout/releases/tag/v4.3.0
++      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955
++      - id: release-server
++        name: Full release of libs/server-sdk (macOS arm64)
++        uses: ./.github/actions/sdk-release
++        with:
++          tag_name: ${{ needs.release-please.outputs.package-server-tag }}
++          github_token: ${{secrets.GITHUB_TOKEN}}
++          sdk_path: 'libs/server-sdk'
++          sdk_cmake_target: 'launchdarkly-cpp-server'
++          mac_artifact_arch: 'arm64'
++
+   release-server-redis:
+     strategy:
+       matrix:
+         # Each of the platforms for which release-artifacts need generated.
+-        os: [ ubuntu-22.04, windows-2022, macos-13 ]
++        os: [ ubuntu-22.04, windows-2022, macos-15-large ]
+     runs-on: ${{ matrix.os }}
+     needs: [ 'release-please' ]
+     if: ${{ needs.release-please.outputs.package-server-redis-released  == 'true'}}
+@@ -98,6 +136,25 @@ jobs:
+           sdk_path: 'libs/server-sdk-redis-source'
+           sdk_cmake_target: 'launchdarkly-cpp-server-redis-source'
+ 
++  release-server-redis-mac-arm64:
++    runs-on: macos-15
++    needs: [ 'release-please' ]
++    if: ${{ needs.release-please.outputs.package-server-redis-released  == 'true'}}
++    outputs:
++      hashes-macos-arm64: ${{ steps.release-server-redis.outputs.hashes-macos }}
++    steps:
++      # https://github.com/actions/checkout/releases/tag/v4.3.0
++      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955
++      - id: release-server-redis
++        name: Full release of libs/server-sdk-redis-source (macOS arm64)
++        uses: ./.github/actions/sdk-release
++        with:
++          tag_name: ${{ needs.release-please.outputs.package-server-redis-tag }}
++          github_token: ${{secrets.GITHUB_TOKEN}}
++          sdk_path: 'libs/server-sdk-redis-source'
++          sdk_cmake_target: 'launchdarkly-cpp-server-redis-source'
++          mac_artifact_arch: 'arm64'
++
+   release-client-provenance:
+     needs: [ 'release-please', 'release-client' ]
+     strategy:
+@@ -115,6 +172,19 @@ jobs:
+       upload-tag-name: ${{ needs.release-please.outputs.package-client-tag }}
+       provenance-name: ${{ format('{0}-client-multiple-provenance.intoto.jsonl', matrix.os) }}
+ 
++  release-client-mac-arm64-provenance:
++    needs: [ 'release-please', 'release-client-mac-arm64' ]
++    permissions:
++      actions: read
++      id-token: write
++      contents: write
++    uses: slsa-framework/slsa-github-generator/.github/workflows/generator_generic_slsa3.yml@v2.1.0
++    with:
++      base64-subjects: "${{ needs.release-client-mac-arm64.outputs.hashes-macos-arm64 }}"
++      upload-assets: true
++      upload-tag-name: ${{ needs.release-please.outputs.package-client-tag }}
++      provenance-name: 'macos-arm64-client-multiple-provenance.intoto.jsonl'
++
+   release-server-provenance:
+     needs: [ 'release-please', 'release-server' ]
+     strategy:
+@@ -132,6 +202,19 @@ jobs:
+       upload-tag-name: ${{ needs.release-please.outputs.package-server-tag }}
+       provenance-name: ${{ format('{0}-server-multiple-provenance.intoto.jsonl', matrix.os) }}
+ 
++  release-server-mac-arm64-provenance:
++    needs: [ 'release-please', 'release-server-mac-arm64' ]
++    permissions:
++      actions: read
++      id-token: write
++      contents: write
++    uses: slsa-framework/slsa-github-generator/.github/workflows/generator_generic_slsa3.yml@v2.1.0
++    with:
++      base64-subjects: "${{ needs.release-server-mac-arm64.outputs.hashes-macos-arm64 }}"
++      upload-assets: true
++      upload-tag-name: ${{ needs.release-please.outputs.package-server-tag }}
++      provenance-name: 'macos-arm64-server-multiple-provenance.intoto.jsonl'
++
+   release-server-redis-provenance:
+     needs: [ 'release-please', 'release-server-redis' ]
+     strategy:
+@@ -149,3 +232,15 @@ jobs:
+       upload-tag-name: ${{ needs.release-please.outputs.package-server-redis-tag }}
+       provenance-name: ${{ format('{0}-server-redis-multiple-provenance.intoto.jsonl', matrix.os) }}
+ 
++  release-server-redis-mac-arm64-provenance:
++    needs: [ 'release-please', 'release-server-redis-mac-arm64' ]
++    permissions:
++      actions: read
++      id-token: write
++      contents: write
++    uses: slsa-framework/slsa-github-generator/.github/workflows/generator_generic_slsa3.yml@v2.1.0
++    with:
++      base64-subjects: "${{ needs.release-server-redis-mac-arm64.outputs.hashes-macos-arm64 }}"
++      upload-assets: true
++      upload-tag-name: ${{ needs.release-please.outputs.package-server-redis-tag }}
++      provenance-name: 'macos-arm64-server-redis-multiple-provenance.intoto.jsonl'
+diff --git a/.github/workflows/server-otel.yml b/.github/workflows/server-otel.yml
+index a284a25d..0ad3825a 100644
+--- a/.github/workflows/server-otel.yml
++++ b/.github/workflows/server-otel.yml
+@@ -26,7 +26,7 @@ jobs:
+           # We don't produce release artifacts.
+           simulate_release: false
+   build-otel-mac:
+-    runs-on: macos-13
++    runs-on: macos-15
+     steps:
+       # https://github.com/actions/checkout/releases/tag/v4.3.0
+       - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955
+diff --git a/.github/workflows/server-redis.yml b/.github/workflows/server-redis.yml
+index 82f31ca4..0a73c478 100644
+--- a/.github/workflows/server-redis.yml
++++ b/.github/workflows/server-redis.yml
+@@ -29,7 +29,7 @@ jobs:
+           cmake_target: launchdarkly-cpp-server-redis-source
+           simulate_release: true
+   build-redis-mac:
+-    runs-on: macos-13
++    runs-on: macos-15
+     steps:
+       # https://github.com/actions/checkout/releases/tag/v4.3.0
+       - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955
+diff --git a/.github/workflows/server.yml b/.github/workflows/server.yml
+index 8d5f9abe..f1b996dd 100644
+--- a/.github/workflows/server.yml
++++ b/.github/workflows/server.yml
+@@ -81,7 +81,7 @@ jobs:
+           simulate_release: true
+ 
+   build-test-server-mac:
+-    runs-on: macos-13
++    runs-on: macos-15
+     steps:
+       # https://github.com/actions/checkout/releases/tag/v4.3.0
+       - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955
+@@ -92,7 +92,7 @@ jobs:
+           simulate_release: true
+ 
+   build-test-server-mac-curl:
+-    runs-on: macos-13
++    runs-on: macos-15
+     steps:
+       # https://github.com/actions/checkout/releases/tag/v4.3.0
+       - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955
+diff --git a/release-please-config.json b/release-please-config.json
+index f55d283d..224c1644 100644
+--- a/release-please-config.json
++++ b/release-please-config.json
+@@ -25,7 +25,6 @@
+       ]
+     },
+     "libs/server-sdk-otel": {
+-      "release-as": "0.1.0",
+       "bump-minor-pre-major": true,
+       "extra-files": [
+         "CMakeLists.txt"
+diff --git a/vendor/foxy/include/foxy/detail/export_connect_fields.hpp b/vendor/foxy/include/foxy/detail/export_connect_fields.hpp
+index 0c158174..f2310380 100644
+--- a/vendor/foxy/include/foxy/detail/export_connect_fields.hpp
++++ b/vendor/foxy/include/foxy/detail/export_connect_fields.hpp
+@@ -18,6 +18,7 @@
+ 
+ #include <boost/utility/string_view.hpp>
+ #include <boost/range/algorithm.hpp>
++#include <boost/version.hpp>
+ 
+ #include <type_traits>
+ #include <array>
+@@ -88,6 +89,18 @@ launchdarkly::foxy::detail::export_connect_fields(boost::beast::http::basic_fiel
+   // iterate the `src` fields, moving any connect headers and the corresponding tokens to the `dst`
+   // fields
+   //
++  // Boost 1.90 removed proxy_authentication_info, proxy_features, and
++  // proxy_instruction from boost::beast::http::field.
++#if BOOST_VERSION >= 109000
++  auto const hop_by_hops = std::array<http::field, 8>{http::field::connection,
++                                                      http::field::keep_alive,
++                                                      http::field::proxy_authenticate,
++                                                      http::field::proxy_authorization,
++                                                      http::field::proxy_connection,
++                                                      http::field::te,
++                                                      http::field::trailer,
++                                                      http::field::transfer_encoding};
++#else
+   auto const hop_by_hops = std::array<http::field, 11>{http::field::connection,
+                                                        http::field::keep_alive,
+                                                        http::field::proxy_authenticate,
+@@ -99,6 +112,7 @@ launchdarkly::foxy::detail::export_connect_fields(boost::beast::http::basic_fiel
+                                                        http::field::te,
+                                                        http::field::trailer,
+                                                        http::field::transfer_encoding};
++#endif
+ 
+   auto const is_connect_opt =
+     [&connect_opts,
