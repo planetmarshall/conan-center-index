@@ -67,6 +67,9 @@ def main():
             )
 
         for recipe_to_build in recipes_to_build:
+            if recipe_to_build["folder"] == "entos":
+                "Skipping entos recipe"
+                continue
             cmd = "conan create recipes/{recipe}/{folder} --version={version} --build=missing".format(
                 **recipe_to_build
             )

@@ -18,7 +18,6 @@ Not all packages available in CCI will be provided by the
 
 * `entos-master`: the default branch for this repository.
 * `master`: the default branch for the upstream repository.
-* `upstream-update`: The branch used to merge updates from the upstream repository.
 
 ### Updating or providing a new package:
 
@@ -27,20 +26,37 @@ Not all packages available in CCI will be provided by the
    If it is, pull the changes from upstream. Check also that a PR has not also been raised upstream,
    you may be able to use this.
 3. If necessary, add or update the required package
-4. Add the package and **and any dependencies** to `entos-packages.yml`
+4. Add the package and **and any dependencies** to [entos-packages.yml](entos-packages.yml)
 
 Upon a successful PR build, the package will be available from 
 [conan-entos-iui-dev](https://partners.artifactory.comcast.com/ui/repos/tree/General/conan-entos-iui-dev) for testing.
 
-When the PR is merged to `master`, the package recipe will be available from the main 
+When the PR is merged to `entos-master`, the package recipe will be available from the main 
 [conan-entos-iui-prod](https://partners.artifactory.comcast.com/ui/repos/tree/General/conan-entos-iui-prod)
 repository.
 
+### Entos wrapper packages
+
+In some cases, packages provided by the Entos sysroot should be preferred over packages built
+from source. For this purpose, [Wrapper Packages](https://docs.conan.io/2/examples/tools/system/system_package/package_manager.html#wrapping-a-library-installed-in-the-system-as-a-conan-package)
+are available which make these packages available to Conan. These packages can be found in an `entos` subfolder of
+the package recipe, the convention is for these recipes to be identified by the user suffix `@entos`.
+
+They can be used by specifying a [replace_requires](https://docs.conan.io/2/reference/config_files/profiles.html#replace-requires)
+entry in the appropriate profile, for example:
+
+```
+[replace_requires]
+wayland/*: wayland/1.20.0@entos
+```
+
+
 ### Updating from upstream
 
-To merge updates from the upstream repository, create a new branch called `upstream-update`.
-This branch name will be used to disable CI Workflow checks which normally only allow one
-recipe to be updated at a time.
+A [scheduled workflow](.github/workflows/sync_upstream.yml) automatically creates a PR with
+the latest changes from the upstream repository. It is likely that the PR will contain merge
+conflicts that require resolution. Where appropriate, changes to the upstream repository
+should be preferred if they are compatible.
 
 ### CI Notes
 
