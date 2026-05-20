@@ -121,6 +121,11 @@ patches:
       base_path: "qt5/qtbase"
       patch_description: "Support for building with osxcross"
       patch_type: "portability"
+    - patch_file: "patches/5.15.7/fix-xkbcommon-1.6.0.patch"
+      base_path: "qt5/qtbase"
+      patch_description: "Fix compatibility with xkbcommon 1.6.0"
+      patch_type: "portability"
+      patch_source: "https://codereview.qt-project.org/c/qt/qtbase/+/510764"
   "5.15.7-qtremoval":
     - patch_file: "patches/5.15.7-qtremoval/qobject_patch_for_sig.patch"
       base_path: "qt5"
