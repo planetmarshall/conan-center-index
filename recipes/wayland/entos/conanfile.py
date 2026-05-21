@@ -74,8 +74,8 @@ class WaylandEntosConan(ConanFile):
                 f"Version of wayland in Entos sysroot ({pkgconf.version}) does not match recipe version {self.version}"
             )
 
-        include_dir = (self._sysroot / pkgconf.variables["includedir"]).as_posix()
-        lib_dir = (self._sysroot / pkgconf.variables["libdir"]).as_posix()
+        include_dir = (self._sysroot / Path(pkgconf.variables["includedir"]).relative_to("/")).as_posix()
+        lib_dir = (self._sysroot / Path(pkgconf.variables["libdir"]).relative_to("/")).as_posix()
 
         self.cpp_info.components["wayland-client"].libs = ["wayland-client"]
         self.cpp_info.components["wayland-client"].set_property(
