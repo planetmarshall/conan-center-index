@@ -1,36 +1,22 @@
 from conan import ConanFile
-from conan.tools.build import can_run
-from conan.tools.cmake import CMake, cmake_layout
-from conan.tools.scm import Version
-import os
-
-from conan.tools.system.package_manager import Apt, PacMan
+from conan.tools.env import VirtualRunEnv
 
 
 class TestPackageConan(ConanFile):
     settings = "os", "arch", "compiler", "build_type"
-    generators = "CMakeToolchain", "CMakeDeps", "VirtualRunEnv"
-    test_type = "explicit"
-
-    def layout(self):
-        cmake_layout(self)
+    generators = "VirtualRunEnv"
 
     def requirements(self):
-        version = Version(self.tested_reference_str.split("/")[1])
-        self.output.info(f"version: {version}")
-        self.requires(f"vulkan-loader/1.4.313.0")
         self.requires(self.tested_reference_str)
 
-    def system_requirements(self):
-        Apt(self).install(["mesa-vulkan-drivers"])
-        PacMan(self).install(["vulkan-swrast"])
-
-    def build(self):
-        cmake = CMake(self)
-        cmake.configure()
-        cmake.build()
-
     def test(self):
-        if can_run(self):
-            bin_path = os.path.join(self.cpp.build.bindirs[0], "test_package")
-            self.run(bin_path, env="conanrun")
+        env_vars = VirtualRunEnv(self).environment().vars(self, scope="run")
+        vk_layer_path = env_vars.get("VK_LAYER_PATH")
+        assert vk_layer_path, "VK_LAYER_PATH is not set in the conanrun environment"
+        self.output.info(f"VK_LAYER_PATH = {vk_layer_path}")
+        if self.settings.os == "Macos":
+            assert env_vars.get("DYLD_LIBRARY_PATH"), "DYLD_LIBRARY_PATH is not set in the conanrun environment"
+        elif self.settings.os == "Linux":
+            assert env_vars.get("LD_LIBRARY_PATH"), "LD_LIBRARY_PATH is not set in the conanrun environment"
+        elif self.settings.os == "Windows":
+            assert env_vars.get("PATH"), "PATH is not set in the conanrun environment"

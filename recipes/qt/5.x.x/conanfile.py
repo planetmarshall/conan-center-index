@@ -5,7 +5,6 @@ from conan.tools.apple import is_apple_os, to_apple_arch
 from conan.tools.build import build_jobs, check_min_cppstd, cross_building
 from conan.tools.env import Environment, VirtualBuildEnv, VirtualRunEnv
 from conan.tools.files import chdir, copy, get, load, replace_in_file, rm, rmdir, save, export_conandata_patches, apply_conandata_patches
-from conan.tools.cmake import cmake_layout
 from conan.tools.gnu import PkgConfigDeps
 from conan.tools.microsoft import is_msvc, msvc_runtime_flag, is_msvc_static_runtime, VCVars
 from conan.tools.scm import Version
@@ -42,6 +41,7 @@ class QtConan(ConanFile):
     options = {
         "shared": [True, False],
         "commercial": [True, False],
+
         "opengl": ["no", "es2", "desktop", "dynamic"],
         "with_vulkan": [True, False],
         "openssl": [True, False],
@@ -69,8 +69,10 @@ class QtConan(ConanFile):
         "with_atspi": [True, False],
         "with_md4c": [True, False],
         "with_x11": [True, False],
+
         "gui": [True, False],
         "widgets": [True, False],
+
         "android_sdk": [None, "ANY"],
         "device": [None, "ANY"],
         "cross_compile": [None, "ANY"],
@@ -111,8 +113,10 @@ class QtConan(ConanFile):
         "with_atspi": False,
         "with_md4c": True,
         "with_x11": True,
+
         "gui": True,
         "widgets": True,
+
         "android_sdk": None,
         "device": None,
         "cross_compile": None,
@@ -184,7 +188,7 @@ class QtConan(ConanFile):
         if self.settings.compiler in ["gcc", "clang"]:
             if Version(self.settings.compiler.version) < "5.0":
                 raise ConanInvalidConfiguration("qt 5.15.X does not support GCC or clang before 5.0")
-        
+
         if (
             self.settings.compiler in ["gcc", "clang"]
             and Version(self.settings.compiler.version) < "5.3"
@@ -212,7 +216,7 @@ class QtConan(ConanFile):
             # Disable features that didn't exist or have incompatible dependencies
             del self.options.openssl
             del self.options.with_pcre2
-            del self.options.with_md4c 
+            del self.options.with_md4c
             del self.options.with_zstd
             del self.options.with_harfbuzz
             del self.options.with_mysql
@@ -792,7 +796,7 @@ class QtConan(ConanFile):
         args.append("--fontconfig=" + ("yes" if self.options.get_safe("with_fontconfig", False) else "no"))
         args.append("--icu=" + ("yes" if self.options.get_safe("with_icu", False) else "no"))
         args.append("--sql-mysql=" + ("yes" if self.options.get_safe("with_mysql", False) else "no"))
-        
+
         args.append("--sql-psql=" + ("yes" if self.options.get_safe("with_pq", False) else "no"))
         args.append("--sql-odbc=" + ("yes" if self.options.get_safe("with_odbc", False) else "no"))
         # Explicitly disable other SQL drivers to avoid configure tests failures
