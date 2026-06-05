@@ -1,0 +1,36 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 7cceb2c..d98ead4 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -18,8 +18,9 @@ endif()
+ find_package(Boost 1.67
+              COMPONENTS
+                 system
++                date_time
++             OPTIONAL_COMPONENTS
+                 filesystem
+-				date_time
+                 unit_test_framework
+              REQUIRED)
+ 
+@@ -47,7 +48,6 @@ target_link_libraries(
+     core
+     INTERFACE
+         Boost::system
+-        Boost::filesystem
+         Boost::date_time
+         Threads::Threads
+         OpenSSL::SSL
+diff --git a/tests/CMakeLists.txt b/tests/CMakeLists.txt
+index 39e0ad1..aa47aef 100644
+--- a/tests/CMakeLists.txt
++++ b/tests/CMakeLists.txt
+@@ -1,7 +1,7 @@
+ function (certify_verify_add_test test_file)
+     get_filename_component(target_name ${test_file} NAME_WE)
+     add_executable(${target_name} ${test_file})
+-    target_link_libraries(${target_name} certify::core)
++    target_link_libraries(${target_name} certify::core Boost::filesystem)
+     target_include_directories(${target_name} PRIVATE ../include ../tests/extras/include)
+     if ( CMAKE_COMPILER_IS_GNUCC )
+         target_compile_options(${target_name} PRIVATE -Wall -Wextra -pedantic)

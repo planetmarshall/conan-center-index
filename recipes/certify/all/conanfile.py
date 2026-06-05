@@ -3,10 +3,11 @@ import os
 from conan import ConanFile
 from conan.errors import ConanInvalidConfiguration
 from conan.tools.build import check_min_cppstd
-from conan.tools.files import copy, get
+from conan.tools.files import copy, get, apply_conandata_patches, \
+    export_conandata_patches
 from conan.tools.layout import basic_layout
 
-required_conan_version = ">=1.52.0"
+required_conan_version = ">=2.0.0"
 
 
 class CertifyConan(ConanFile):
@@ -33,6 +34,9 @@ class CertifyConan(ConanFile):
             "clang": "7",
             "apple-clang": "11",
         }
+
+    def export_sources(self):
+        export_conandata_patches(self)
 
     def layout(self):
         basic_layout(self, src_folder="src")
@@ -66,6 +70,7 @@ class CertifyConan(ConanFile):
 
     def source(self):
         get(self, **self.conan_data["sources"][self.version], strip_root=True)
+        apply_conandata_patches(self)
 
     def package(self):
         copy(
@@ -86,15 +91,8 @@ class CertifyConan(ConanFile):
         self.cpp_info.set_property("cmake_target_name", "certify::core")
         component_requirements = [
             "boost::headers",
-            "boost::filesystem",
             "boost::date_time",
             "openssl::openssl"
         ]
 
         self.cpp_info.requires = component_requirements
-        self.cpp_info.components["_certify"].requires = component_requirements
-        self.cpp_info.components["_certify"].names["cmake_find_package"] = "core"
-        self.cpp_info.components["_certify"].names["cmake_find_package_multi"] = "core"
-
-        self.cpp_info.names["cmake_find_package"] = "certify"
-        self.cpp_info.names["cmake_find_package_multi"] = "certify"
