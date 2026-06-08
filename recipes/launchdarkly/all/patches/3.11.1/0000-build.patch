@@ -72,3 +72,18 @@ index 2be93f63..18e5f69b 100644
  # Add main SDK sources.
  add_subdirectory(src)
  
+diff --git a/vendor/foxy/CMakeLists.txt b/vendor/foxy/CMakeLists.txt
+index 99b33d56..9158d5cd 100644
+--- a/vendor/foxy/CMakeLists.txt
++++ b/vendor/foxy/CMakeLists.txt
+@@ -31,9 +31,7 @@ project(
+         "Session-based abstractions for Beast + URL parsing and pct-coding"
+ )
+ 
+-set(CMAKE_FILES ${CMAKE_CURRENT_SOURCE_DIR}/cmake)
+-include(${CMAKE_FILES}/certify.cmake)
+-
++find_package(certify REQUIRED)
+ find_package(
+         Boost ${foxy_minimum_boost_version}
+         REQUIRED
