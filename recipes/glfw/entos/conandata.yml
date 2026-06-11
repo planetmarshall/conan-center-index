@@ -1,0 +1,5 @@
+sources:
+  "3.4+entos.be7c73b1":
+    # entos/conanfile.py injects XE_ORG_TOKEN at clone time for CI access to the private entos-xe/glfw repo.
+    url: "https://github.com/entos-xe/glfw.git"
+    commit: "be7c73b19c5028a6b2586f10d0860ce669994b3f"

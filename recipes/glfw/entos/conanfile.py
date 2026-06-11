@@ -1,25 +1,49 @@
 from conan import ConanFile
-from conan.errors import ConanInvalidConfiguration
+from conan.errors import ConanInvalidConfiguration, ConanException
 from conan.tools.cmake import CMake, CMakeDeps, CMakeToolchain, cmake_layout
 from conan.tools.env import VirtualBuildEnv, VirtualRunEnv
-from conan.tools.files import apply_conandata_patches, copy, export_conandata_patches, get, replace_in_file, rmdir, save
+from conan.tools.files import apply_conandata_patches, copy, \
+    export_conandata_patches, replace_in_file, rmdir, save
 from conan.tools.gnu import PkgConfigDeps
 from conan.tools.microsoft import is_msvc, is_msvc_static_runtime
-from conan.tools.scm import Version
-import os
+from conan.tools.scm import Git, Version
 import textwrap
+import contextlib
+import os
+
+
+# Source - https://stackoverflow.com/a/34333710
+# Posted by Laurent LAPORTE, modified by community. See post 'Timeline' for change history
+# Retrieved 2026-06-11, License - CC BY-SA 4.0
+
+@contextlib.contextmanager
+def set_env(**environ):
+    """
+    Temporarily set the process environment variables.
+
+    :type environ: dict[str, unicode]
+    :param environ: Environment variables to set
+    """
+    old_environ = dict(os.environ)
+    os.environ.update(environ)
+    try:
+        yield
+    finally:
+        os.environ.clear()
+        os.environ.update(old_environ)
+
 
 required_conan_version = ">=2.0.5"
 
 
-class GlfwConan(ConanFile):
+class GlfwEntosConan(ConanFile):
     name = "glfw"
     description = "GLFW is a free, Open Source, multi-platform library for OpenGL, OpenGL ES and Vulkan" \
                   "application development. It provides a simple, platform-independent API for creating" \
                   "windows, contexts and surfaces, reading input, handling events, etc."
     license = "Zlib"
     url = "https://github.com/conan-io/conan-center-index"
-    homepage = "https://github.com/glfw/glfw"
+    homepage = "https://github.com/entos-xe/glfw"
     topics = ("graphics", "opengl", "vulkan", "opengl-es")
     package_type = "library"
     settings = "os", "arch", "build_type", "compiler"
@@ -29,6 +53,7 @@ class GlfwConan(ConanFile):
         "vulkan_static": [True, False],
         "with_x11": [True, False],
         "with_wayland": [True, False],
+        "egl_library": [None, "ANY"]
     }
     default_options = {
         "shared": False,
@@ -36,6 +61,7 @@ class GlfwConan(ConanFile):
         "vulkan_static": False,
         "with_x11": True,
         "with_wayland": False,
+        "egl_library": None
     }
 
     @property
@@ -50,7 +76,8 @@ class GlfwConan(ConanFile):
             self.options.rm_safe("fPIC")
         if self.settings.os != "Linux":
             self.options.rm_safe("with_wayland")
-        if self.settings.os not in ["Linux", "FreeBSD"] or Version(self.version) <= "3.3.8":
+        if self.settings.os not in ["Linux", "FreeBSD"] or Version(
+                self.version) <= "3.3.8":
             self.options.rm_safe("with_x11")
         if Version(self.version) >= "3.4":
             self.options.rm_safe("vulkan_static")
@@ -70,27 +97,31 @@ class GlfwConan(ConanFile):
         cmake_layout(self, src_folder="src")
 
     def requirements(self):
-        # libs=False because glfw does not link to opengl, it
-        # loads it via dlopen or equivalent
-        self.requires("opengl/system", libs=False, transitive_headers=True)
+        if Version(self.version) < "3.4":
+            self.requires("opengl/system", libs=False, transitive_headers=True)
         if self.options.get_safe("vulkan_static"):
-            self.requires("vulkan-loader/1.3.268.0")
+            self.requires("vulkan-loader/[>=1.3.268.0 <2]")
         if self.settings.os in ["Linux", "FreeBSD"]:
             if self.options.get_safe("with_x11", True):
                 self.requires("xorg/system")
         if self.options.get_safe("with_wayland"):
-            self.requires("wayland/1.22.0")
-            self.requires("xkbcommon/1.6.0")
+            self.requires("wayland/[>=1.22.0 <2]")
+            self.requires("xkbcommon/[>=1.6.0 <2]")
 
     def validate(self):
         if self.options.get_safe("with_wayland"):
-            xkbcommon_options = self.dependencies["xkbcommon"].options
-            if not xkbcommon_options.with_wayland:
-                raise ConanInvalidConfiguration(f"{self.ref} requires the with_wayland option in xkbcommon to be enabled when the with_wayland option is enabled")
-            if not xkbcommon_options.shared:
-                raise ConanInvalidConfiguration(f"{self.ref} always loads xkbcommon dependencies dynamically and does not support static linkage")
-            if not self.dependencies["wayland"].options.shared:
-                raise ConanInvalidConfiguration(f"{self.ref} always loads wayland dependencies dynamically and does not support static linkage")
+            if "xkbcommon" in self.dependencies:
+                xkbcommon_options = self.dependencies["xkbcommon"].options
+                if not xkbcommon_options.with_wayland:
+                    raise ConanInvalidConfiguration(
+                        f"{self.ref} requires the with_wayland option in xkbcommon to be enabled when the with_wayland option is enabled")
+                if not xkbcommon_options.shared:
+                    raise ConanInvalidConfiguration(
+                        f"{self.ref} always loads xkbcommon dependencies dynamically and does not support static linkage")
+            if "wayland" in self.dependencies and not self.dependencies[
+                "wayland"].options.shared:
+                raise ConanInvalidConfiguration(
+                    f"{self.ref} always loads wayland dependencies dynamically and does not support static linkage")
 
     def build_requirements(self):
         if self.options.get_safe("with_wayland"):
@@ -101,12 +132,34 @@ class GlfwConan(ConanFile):
                 self.tool_requires("pkgconf/[>=2.2 <3]")
 
     def source(self):
-        get(self, **self.conan_data["sources"][self.version], strip_root=True)
+        # Clone entos-xe/glfw at the commit pinned in conandata.yml.
+        # If XE_ORG_TOKEN is set (the unattended CI path), it is injected into the
+        # URL. Otherwise the clone falls back to whatever git's credential helper
+        # or SSH agent provides; if neither can authenticate, git.clone() raises
+        # and the error surfaces directly.
+        source = self.conan_data["sources"][self.version]
+        token = os.environ.get("XE_ORG_TOKEN") or os.environ.get("GITHUB_TOKEN")
+        if token:
+            # Mirror the templating used by conan-setup-action: https://<token>@github.com/<org>/<repo>.git
+            url = source["url"].replace("https://", f"https://{token}@", 1)
+        else:
+            url = source["url"]
+        git = Git(self, folder=self.source_folder)
+        try:
+            # fail if we need to ask for credentials interactively
+            with set_env(GIT_TERMINAL_PROMPT="0"):
+                git.clone(url=url, target=".")
+        except Exception as e:
+            raise ConanException(
+                "Failed to retrieve entos-xe/glfw sources. Define `GITHUB_TOKEN` or use a [source_credentials](https://docs.conan.io/2/reference/config_files/source_credentials.html#) file.", e)
+
+        git.checkout(commit=source["commit"])
 
     def generate(self):
         env = VirtualBuildEnv(self)
         env.generate()
-        if self.options.get_safe("with_wayland") and not self._has_build_profile:
+        if self.options.get_safe(
+                "with_wayland") and not self._has_build_profile:
             env = VirtualRunEnv(self)
             env.generate(scope="build")
 
@@ -115,15 +168,27 @@ class GlfwConan(ConanFile):
         tc.cache_variables["GLFW_BUILD_EXAMPLES"] = False
         tc.cache_variables["GLFW_BUILD_TESTS"] = False
         tc.cache_variables["GLFW_INSTALL"] = True
+        tc.cache_variables["GLFW_ENTOS"] = bool(
+            self.settings.os.get_safe("rdk", False))
+        if self.options.egl_library:
+            tc.cache_variables["GLFW_EGL_LIBRARY"] = str(
+                self.options.egl_library)
+
         if Version(self.version) > "3.3.8":
-            tc.cache_variables["GLFW_BUILD_X11"] = self.options.get_safe("with_x11", False)
-            tc.cache_variables["GLFW_BUILD_WAYLAND"] = self.options.get_safe("with_wayland", False)
+            tc.cache_variables["GLFW_BUILD_X11"] = self.options.get_safe(
+                "with_x11", False)
+            tc.cache_variables["GLFW_BUILD_WAYLAND"] = self.options.get_safe(
+                "with_wayland", False)
         else:
-            tc.cache_variables["GLFW_USE_WAYLAND"] = self.options.get_safe("with_wayland", False)
+            tc.cache_variables["GLFW_USE_WAYLAND"] = self.options.get_safe(
+                "with_wayland", False)
         if Version(self.version) < "3.4":
-            tc.cache_variables["GLFW_VULKAN_STATIC"] = self.options.get_safe("vulkan_static", False)
+            tc.cache_variables["GLFW_VULKAN_STATIC"] = self.options.get_safe(
+                "vulkan_static", False)
         if is_msvc(self):
-            tc.cache_variables["USE_MSVC_RUNTIME_LIBRARY_DLL"] = not is_msvc_static_runtime(self)
+            tc.cache_variables[
+                "USE_MSVC_RUNTIME_LIBRARY_DLL"] = not is_msvc_static_runtime(
+                self)
         tc.generate()
         cmake_deps = CMakeDeps(self)
         if self.options.get_safe("with_wayland"):
@@ -136,8 +201,10 @@ class GlfwConan(ConanFile):
             else:
                 # Manually generate pkgconfig file of wayland-protocols since
                 # PkgConfigDeps.build_context_activated can't work with legacy 1 profile
-                wp_prefix = self.dependencies.build["wayland-protocols"].package_folder
-                wp_version = self.dependencies.build["wayland-protocols"].ref.version
+                wp_prefix = self.dependencies.build[
+                    "wayland-protocols"].package_folder
+                wp_version = self.dependencies.build[
+                    "wayland-protocols"].ref.version
                 wp_pkg_content = textwrap.dedent(f"""\
                     prefix={wp_prefix}
                     datarootdir=${{prefix}}/res
@@ -146,17 +213,21 @@ class GlfwConan(ConanFile):
                     Description: Wayland protocol files
                     Version: {wp_version}
                 """)
-                save(self, os.path.join(self.generators_folder, "wayland-protocols.pc"), wp_pkg_content)
+                save(self, os.path.join(self.generators_folder,
+                                        "wayland-protocols.pc"), wp_pkg_content)
             pkg_config_deps.generate()
 
     def _patch_sources(self):
         apply_conandata_patches(self)
         # don't force PIC
-        replace_in_file(self, os.path.join(self.source_folder, "src", "CMakeLists.txt"),
+        replace_in_file(self, os.path.join(self.source_folder, "src",
+                                           "CMakeLists.txt"),
                         "POSITION_INDEPENDENT_CODE ON", "")
         # don't force static link to libgcc if MinGW
-        replace_in_file(self, os.path.join(self.source_folder, "src", "CMakeLists.txt"),
-                        "target_link_libraries(glfw PRIVATE \"-static-libgcc\")", "")
+        replace_in_file(self, os.path.join(self.source_folder, "src",
+                                           "CMakeLists.txt"),
+                        "target_link_libraries(glfw PRIVATE \"-static-libgcc\")",
+                        "", strict=False)
 
         # Allow to link vulkan-loader into shared glfw
         if self.options.get_safe("vulkan_static"):
@@ -182,30 +253,12 @@ class GlfwConan(ConanFile):
         cmake.build()
 
     def package(self):
-        copy(self, "LICENSE*", self.source_folder, os.path.join(self.package_folder, "licenses"))
+        copy(self, "LICENSE*", self.source_folder,
+             os.path.join(self.package_folder, "licenses"))
         cmake = CMake(self)
         cmake.install()
         rmdir(self, os.path.join(self.package_folder, "lib", "cmake"))
         rmdir(self, os.path.join(self.package_folder, "lib", "pkgconfig"))
-        self._create_cmake_module_alias_targets(
-            os.path.join(self.package_folder, self._module_file_rel_path),
-            {"glfw": "glfw::glfw"}
-        )
-
-    def _create_cmake_module_alias_targets(self, module_file, targets):
-        content = ""
-        for alias, aliased in targets.items():
-            content += textwrap.dedent(f"""\
-                if(TARGET {aliased} AND NOT TARGET {alias})
-                    add_library({alias} INTERFACE IMPORTED)
-                    set_property(TARGET {alias} PROPERTY INTERFACE_LINK_LIBRARIES {aliased})
-                endif()
-            """)
-        save(self, module_file, content)
-
-    @property
-    def _module_file_rel_path(self):
-        return os.path.join("lib", "cmake", f"conan-official-{self.name}-targets.cmake")
 
     def package_info(self):
         self.cpp_info.set_property("cmake_file_name", "glfw3")
@@ -224,18 +277,14 @@ class GlfwConan(ConanFile):
             self.cpp_info.system_libs.append("gdi32")
         elif self.settings.os == "Macos":
             self.cpp_info.frameworks.extend([
-                "AppKit", "Cocoa", "CoreFoundation", "CoreGraphics",
-                "CoreServices", "Foundation", "IOKit",
+                "Cocoa", "CoreFoundation", "QuartzCore", "IOKit",
             ])
-        self.cpp_info.requires = ["opengl::opengl"]
-        if self.options.get_safe("vulkan_static"):
-            self.cpp_info.requires.append("vulkan-loader::vulkan-loader")
         if self.settings.os in ["Linux", "FreeBSD"]:
             if self.options.get_safe("with_x11", True):
                 # https://github.com/glfw/glfw/blob/3.4/src/CMakeLists.txt#L181-L218
                 # https://github.com/glfw/glfw/blob/3.3.2/CMakeLists.txt#L196-L233
                 self.cpp_info.requires.extend([
-                    "xorg::x11", # Also includes Xkb and Xshape
+                    "xorg::x11",  # Also includes Xkb and Xshape
                     "xorg::xrandr",
                     "xorg::xinerama",
                     "xorg::xcursor",
@@ -261,4 +310,5 @@ class GlfwConan(ConanFile):
                 if self.options.get_safe("with_x11", True):
                     self.cpp_info.requires.append("xorg::x11")
             if self.options.get_safe("with_wayland"):
-                self.cpp_info.requires.extend(["wayland::wayland", "xkbcommon::xkbcommon"])
+                self.cpp_info.requires.extend(
+                    ["wayland::wayland", "xkbcommon::xkbcommon"])

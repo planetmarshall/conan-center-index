@@ -51,6 +51,8 @@ jobs:
 
       - name: Build updated packages
         if: ${{ github.event_name == 'pull_request' && github.head_ref != 'master' }}
+        env:
+          XE_ORG_TOKEN: ${{ secrets.XE_ORG_TOKEN }}
         run: |
           apt-get update -y
           python entos-packages.py --build="${{ steps.changed-files.outputs.all_changed_files }}"
