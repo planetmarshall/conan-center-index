@@ -18,11 +18,11 @@ on:
 jobs:
   export-recipes:
     runs-on: comcast-ubuntu-latest
-    container: ghcr.io/entos-xe/desktop-linux-gcc-14-rust:sha-c6f3c9c
+    container: ghcr.io/entos-xe/desktop-linux-gcc-14-rust:sha-fb9569e
 
     env:
       CONAN_PASSWORD: ${{ secrets.CONAN_ACCESS_KEY }}
-      CONAN_LOGIN_USERNAME: svc-entos-iui-prod
+      CONAN_LOGIN_USERNAME: ${{ vars.CONAN_LOGIN_USERNAME }}
 
     steps:
       - name: Checkout source

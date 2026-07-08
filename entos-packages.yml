@@ -89,7 +89,7 @@ glad:
     - '2.0.8'
 glfw:
   versions:
-    - '3.4+entos.be7c73b1'
+    - '3.4+entos.9845e7c1'
 glib:
   versions:
     - '2.78.3'
