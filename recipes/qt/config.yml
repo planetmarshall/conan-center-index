@@ -9,7 +9,5 @@ versions:
     folder: 5.x.x
   "5.15.7":
     folder: 5.x.x
-  "5.15.7-qtremoval":
-    folder: 5.x.x
   "5.6.3":
     folder: 5.x.x
