@@ -78,7 +78,7 @@ class QtConan(ConanFile):
         "cross_compile": [None, "ANY"],
         "sysroot": [None, "ANY"],
         "config": [None, "ANY"],
-        "multiconfiguration": [True, False],
+        "multiconfiguration": [True, False]
     }
     options.update({module: [True, False] for module in _submodules})
     options.update({f"{status}_modules": [True, False] for status in _module_statuses})
@@ -188,11 +188,7 @@ class QtConan(ConanFile):
         if self.settings.compiler in ["gcc", "clang"]:
             if Version(self.settings.compiler.version) < "5.0":
                 raise ConanInvalidConfiguration("qt 5.15.X does not support GCC or clang before 5.0")
-
-        if (
-            self.settings.compiler in ["gcc", "clang"]
-            and Version(self.settings.compiler.version) < "5.3"
-        ):
+        if self.settings.compiler in ["gcc", "clang"] and Version(self.settings.compiler.version) < "5.3":
             del self.options.with_mysql
         if self.settings.os == "Windows":
             self.options.opengl = "dynamic"
@@ -425,7 +421,7 @@ class QtConan(ConanFile):
         if self.options.get_safe("with_doubleconversion", False) and not self.options.multiconfiguration:
             self.requires("double-conversion/3.3.0")
         if self.options.get_safe("with_freetype", False) and not self.options.multiconfiguration:
-            self.requires("freetype/2.13.2")
+            self.requires("freetype/[>=2.13 <3]")
         if self.options.get_safe("with_fontconfig", False):
             self.requires("fontconfig/2.15.0")
         if self.options.get_safe("with_icu", False):
@@ -472,8 +468,8 @@ class QtConan(ConanFile):
             self.requires("xkbcommon/[>=1.5.0 <2]")
         if self.options.get_safe("opengl", "no") != "no":
             self.requires("opengl/system")
-        if self.options.get_safe("with_zstd", False):
-            self.requires("zstd/[>=1.5.5 <2]")
+        if self.options.with_zstd:
+            self.requires("zstd/[>=1.5 <1.6]")
         if self.options.qtwebengine and self.settings.os in ["Linux", "FreeBSD"]:
             self.requires("expat/[>=2.6.2 <3]")
             self.requires("opus/1.4")
