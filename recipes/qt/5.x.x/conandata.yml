@@ -115,4 +115,3 @@ patches:
   "5.6.3":
     - "base_path": "qt5/qtbase"
       "patch_file": "patches/5.6.3/qt-5.6.3-c++20.patch"
-
