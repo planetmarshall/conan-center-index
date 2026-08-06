@@ -3,6 +3,26 @@
 
 #include <iostream>
 #include <cstring>
+#include <stdexcept>
+
+#include <boost/beast/core.hpp>
+#include <boost/beast/websocket.hpp>
+#include <boost/asio/connect.hpp>
+#include <boost/asio/ip/tcp.hpp>
+
+namespace
+{
+void ws_connect()
+{
+    using tcp = boost::asio::ip::tcp;
+
+    boost::asio::io_context ioContext;
+    auto resolver = tcp::resolver(ioContext.get_executor());
+    const auto results = resolver.resolve("127.0.0.1", "9998");
+    auto ws = std::make_unique<boost::beast::websocket::stream<tcp::socket>>(ioContext.get_executor());
+    boost::asio::connect(ws->next_layer(), results);
+}
+}
 
 // Set MOBILE_KEY to your LaunchDarkly mobile key.
 #define MOBILE_KEY "12345"
@@ -17,6 +37,16 @@
 using namespace launchdarkly;
 
 int main() {
+    try {
+        // make sure that we have no binary incompatibility issues with Boost.ASIO
+        // see https://github.com/launchdarkly/cpp-sdks/issues/590
+        // if there are ODR violations, this will segfault
+        ws_connect();
+    }
+    catch (const std::exception &ex) {
+        std::cerr << "Error connecting to websocket: " << ex.what() << '\n';
+    }
+
     if (!strlen(MOBILE_KEY)) {
         printf(
             "*** Please edit main.c to set MOBILE_KEY to your LaunchDarkly "

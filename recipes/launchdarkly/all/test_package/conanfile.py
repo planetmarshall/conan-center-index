@@ -12,6 +12,7 @@ class TestPackageConan(ConanFile):
 
     def requirements(self):
         self.requires(self.tested_reference_str)
+        self.requires("boost/1.91.0")
 
     def layout(self):
         cmake_layout(self)

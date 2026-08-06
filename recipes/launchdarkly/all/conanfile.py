@@ -4,7 +4,7 @@ from conan.tools.files import copy, rm, rmdir, export_conandata_patches, apply_c
 from conan.tools.build import check_min_cppstd
 from conan.tools.files import get
 from conan.tools.scm import Version
-from conan.tools.cmake import CMake, CMakeDeps, CMakeToolchain, cmake_layout
+from conan.tools.cmake import CMake, CMakeConfigDeps, CMakeToolchain, cmake_layout
 
 import os
 
@@ -30,6 +30,8 @@ class LaunchDarklyConan(ConanFile):
         "fPIC": True
     }
 
+    implements = ["auto_shared_fpic"]
+
     @property
     def _min_cppstd(self):
         return 17
@@ -41,14 +43,6 @@ class LaunchDarklyConan(ConanFile):
             "clang": "7",
             "apple-clang": "10",
         }
-
-    def config_options(self):
-        if self.settings.os == "Windows":
-            del self.options.fPIC
-
-    def configure(self):
-        if self.options.shared:
-            self.options.rm_safe("fPIC")
 
     def layout(self):
         cmake_layout(self, src_folder="src")
@@ -77,25 +71,24 @@ class LaunchDarklyConan(ConanFile):
 
     def generate(self):
         tc = CMakeToolchain(self)
-        tc.variables.update({
+        tc.cache_variables.update({
             "BUILD_TESTING": False,
             "LD_BUILD_EXAMPLES": False,
-            "LD_USE_FETCH_CONTENT": False,
             "LD_BUILD_SHARED_LIBS": self.options.shared,
-            "LD_BUILD_SERVER_SDK": False,
             "LD_DYNAMIC_LINK_OPENSSL": self.dependencies["openssl"].options.shared,
-            "LD_DYNAMIC_LINK_BOOST": self.dependencies["boost"].options.shared
+            "LD_DYNAMIC_LINK_BOOST": self.dependencies["boost"].options.shared,
+            "FETCHCONTENT_TRY_FIND_PACKAGE_MODE": "ALWAYS"
         })
         tc.generate()
 
-        tc = CMakeDeps(self)
-        tc.generate()
+        deps = CMakeConfigDeps(self)
+        deps.generate()
 
     def build(self):
         apply_conandata_patches(self)
         cmake = CMake(self)
         cmake.configure()
-        cmake.build()
+        cmake.build(target="launchdarkly-cpp-client")
 
     def package(self):
         copy(self, pattern="LICENSE", dst=os.path.join(self.package_folder, "licenses"), src=self.source_folder)
@@ -109,18 +102,14 @@ class LaunchDarklyConan(ConanFile):
     def package_info(self):
         self.cpp_info.libs = ["launchdarkly-cpp-client"]
         self.cpp_info.set_property("cmake_file_name", "launchdarkly")
-        self.cpp_info.set_property("cmake_target_name", "launchdarkly::client")
+        self.cpp_info.set_property("cmake_target_name", "launchdarkly::launchdarkly-cpp-client")
 
         self.cpp_info.requires = [
             "certify::certify",
             "openssl::openssl",
             "tl-expected::tl-expected",
-            "boost::container",
-            "boost::coroutine",
-            "boost::date_time",
             "boost::headers",
             "boost::json",
-            "boost::thread",
             "boost::url"
         ]
 

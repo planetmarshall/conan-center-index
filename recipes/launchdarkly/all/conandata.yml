@@ -1,23 +1,11 @@
 sources:
-  "3.11.1":
-    url: "https://github.com/launchdarkly/cpp-sdks/archive/refs/tags/launchdarkly-cpp-client-v3.11.1.tar.gz"
-    sha256: "467535cfdea4a03b025f45a7228f57d7c0577a92c432decbe5019117371d9c87"
-  "3.8.2":
-    url: "https://github.com/launchdarkly/cpp-sdks/archive/refs/tags/launchdarkly-cpp-client-v3.8.2.tar.gz"
-    sha256: "d511e88196d7d04f639844ec7b2fe3e906d4e7017fdf6d3a287ea3562a04aa32"
+  "3.11.4":
+    url: "https://github.com/launchdarkly/cpp-sdks/archive/refs/tags/launchdarkly-cpp-client-v3.11.4.tar.gz"
+    sha256: "a660c464d143857d83728f9247972bdc666b8a6eaca8c5c6667c3e80b2a37c24"
 patches:
-  "3.11.1":
-    - patch_file: "patches/3.11.1/0000-build.patch"
+  "3.11.4":
+    - patch_file: "patches/3.11.4/0000-enable-conan-deps.patch"
       patch_type: portability
-      patch_description: "various patches to disable remote fetching of sources"
-    - patch_file: "patches/3.11.1/0001-foxy-boost-1.90.patch"
-      patch_type: portability
-      patch_description: "fix compatibility of the foxy subproject with boost 1.90"
-      patch_source: https://github.com/launchdarkly/cpp-sdks/pull/506
-  "3.8.2":
-    - patch_file: "patches/3.8.2/no-fetch-content-3.8.2.patch"
-      patch_type: portability
-      patch_description: "allows disabling internal usage of fetch content"
-    - patch_file: "patches/3.8.2/optional-server-sdk-3.8.2.patch"
-      patch_type: portability
-      patch_description: "disable the server sdk which does not build with latest boost"
+      patch_description: |
+        various patches to disable remote fetching of sources and enable setting of
+        build variables from conan.
