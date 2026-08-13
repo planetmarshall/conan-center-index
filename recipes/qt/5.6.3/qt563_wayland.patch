@@ -1,0 +1,89 @@
+--- a/qtwayland/src/3rdparty/protocol/wayland.xml
++++ b/qtwayland/src/3rdparty/protocol/wayland.xml
+@@ -1466,7 +1466,7 @@
+     </event>
+   </interface>
+ 
+-  <interface name="wl_keyboard" version="3">
++  <interface name="wl_keyboard" version="4">
+     <description summary="keyboard input device">
+       The wl_keyboard interface represents one or more keyboards
+       associated with a seat.
+@@ -1550,6 +1550,14 @@
+       <arg name="mods_latched" type="uint"/>
+       <arg name="mods_locked" type="uint"/>
+       <arg name="group" type="uint"/>
++    </event>
++
++    <event name="repeat_info" since="4">
++      <description summary="repeat rate and delay">
++        Informs the client about the keyboard repeat rate and delay.
++      </description>
++      <arg name="rate" type="int" summary="the rate of repeating keys in characters per second"/>
++      <arg name="delay" type="int" summary="delay in milliseconds since key down until repeating starts"/>
+     </event>
+   </interface>
+ 
+--- a/qtwayland/src/client/qwaylandinputdevice_p.h
++++ b/qtwayland/src/client/qwaylandinputdevice_p.h
+@@ -178,6 +178,7 @@
+                             uint32_t mods_latched,
+                             uint32_t mods_locked,
+                             uint32_t group) Q_DECL_OVERRIDE;
++    void keyboard_repeat_info(int32_t rate, int32_t delay) Q_DECL_OVERRIDE;
+ 
+     QWaylandInputDevice *mParent;
+     QWaylandWindow *mFocus;
+--- a/qtwayland/src/client/qwaylandinputdevice.cpp
++++ b/qtwayland/src/client/qwaylandinputdevice.cpp
+@@ -601,8 +601,26 @@
+     if (!surface)
+         return;
+ 
+-
+     QWaylandWindow *window = QWaylandWindow::fromWlSurface(surface);
++
++    // Guard against stale wl_surface user data: Westeros/RDK may send
++    // keyboard_enter for a surface not created by Qt (e.g. a compositor-internal
++    // surface, or one from a previous process whose slot was reused).
++    // fromWlSurface() returns a non-null but invalid pointer in that case,
++    // which later crashes in shellManagesActiveState() via a corrupt vtable dispatch.
++    // Validate by checking the pointer against all windows Qt actually owns.
++    if (window) {
++        bool valid = false;
++        Q_FOREACH (QWindow *w, QGuiApplication::allWindows()) {
++            if (w->handle() == static_cast<QPlatformWindow *>(window)) {
++                valid = true;
++                break;
++            }
++        }
++        if (!valid)
++            window = Q_NULLPTR;
++    }
++
+     mFocus = window;
+ 
+     mParent->mQDisplay->handleKeyboardFocusChanged(mParent);
+@@ -615,7 +633,8 @@
+ 
+     if (surface) {
+         QWaylandWindow *window = QWaylandWindow::fromWlSurface(surface);
+-        window->unfocus();
++        if (window && window == mFocus)
++            window->unfocus();
+     }
+ 
+     mFocus = NULL;
+@@ -744,6 +763,12 @@
+     Q_UNUSED(mods_locked);
+     Q_UNUSED(group);
+ #endif
++}
++
++void QWaylandInputDevice::Keyboard::keyboard_repeat_info(int32_t rate, int32_t delay)
++{
++    Q_UNUSED(rate);
++    Q_UNUSED(delay);
+ }
+ 
+ void QWaylandInputDevice::Touch::touch_down(uint32_t serial,

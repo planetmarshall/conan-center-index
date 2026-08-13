@@ -1,0 +1,1904 @@
+diff -ruN qt563-pristine/include/QtConcurrent/QtConcurrent qt563-polyfill/include/QtConcurrent/QtConcurrent
+--- qt563-pristine/include/QtConcurrent/QtConcurrent	2026-06-26 19:42:30
++++ qt563-polyfill/include/QtConcurrent/QtConcurrent	2026-06-26 19:42:29
+@@ -16,4 +16,5 @@
+ #include "qtconcurrentstoredfunctioncall.h"
+ #include "qtconcurrentthreadengine.h"
+ #include "qtconcurrentversion.h"
++#include <QtCore/qfuturesynchronizer.h> // missing from QtConcurrent umbrella header in 5.6.3
+ #endif
+diff -ruN qt563-pristine/include/QtConcurrent/qtconcurrentthreadengine.h qt563-polyfill/include/QtConcurrent/qtconcurrentthreadengine.h
+--- qt563-pristine/include/QtConcurrent/qtconcurrentthreadengine.h	2026-06-26 19:42:30
++++ qt563-polyfill/include/QtConcurrent/qtconcurrentthreadengine.h	2026-06-26 19:42:29
+@@ -243,7 +243,7 @@
+ class ThreadEngineStarter<void> : public ThreadEngineStarterBase<void>
+ {
+ public:
+-    ThreadEngineStarter<void>(ThreadEngine<void> *_threadEngine)
++    ThreadEngineStarter(ThreadEngine<void> *_threadEngine)
+     :ThreadEngineStarterBase<void>(_threadEngine) {}
+ 
+     void startBlocking()
+diff -ruN qt563-pristine/include/QtCore/QCborMap qt563-polyfill/include/QtCore/QCborMap
+--- qt563-pristine/include/QtCore/QCborMap	2026-06-26 19:42:30
++++ qt563-polyfill/include/QtCore/QCborMap	2026-06-26 19:42:30
+@@ -0,0 +1 @@
++#include "qcbormap.h"
+diff -ruN qt563-pristine/include/QtCore/QCborValue qt563-polyfill/include/QtCore/QCborValue
+--- qt563-pristine/include/QtCore/QCborValue	2026-06-26 19:42:30
++++ qt563-polyfill/include/QtCore/QCborValue	2026-06-26 19:42:29
+@@ -0,0 +1 @@
++#include "qcborvalue.h"
+diff -ruN qt563-pristine/include/QtCore/QRandomGenerator qt563-polyfill/include/QtCore/QRandomGenerator
+--- qt563-pristine/include/QtCore/QRandomGenerator	2026-06-26 19:42:30
++++ qt563-polyfill/include/QtCore/QRandomGenerator	2026-06-26 19:42:30
+@@ -0,0 +1,32 @@
++// Minimal QRandomGenerator stub for Qt 5.6.3 builds.
++// Provides bounded() using qrand() as the random source.
++#ifndef QRANDOMGENERATOR_H
++#define QRANDOMGENERATOR_H
++
++#include <QtCore/qglobal.h>
++
++QT_BEGIN_NAMESPACE
++
++class QRandomGenerator {
++public:
++    static QRandomGenerator *global() {
++        static QRandomGenerator instance;
++        return &instance;
++    }
++
++    // Returns a value in [0, highest)
++    quint32 bounded(quint32 highest) {
++        if (highest == 0) return 0;
++        return static_cast<quint32>(qrand()) % highest;
++    }
++
++    // Returns a value in [lowest, highest)
++    quint32 bounded(quint32 lowest, quint32 highest) {
++        if (highest <= lowest) return lowest;
++        return lowest + bounded(highest - lowest);
++    }
++};
++
++QT_END_NAMESPACE
++
++#endif // QRANDOMGENERATOR_H
+diff -ruN qt563-pristine/include/QtCore/QScopeGuard qt563-polyfill/include/QtCore/QScopeGuard
+--- qt563-pristine/include/QtCore/QScopeGuard	2026-06-26 19:42:30
++++ qt563-polyfill/include/QtCore/QScopeGuard	2026-06-26 19:42:30
+@@ -0,0 +1,2 @@
++#pragma once
++#include "qscopeguard.h"
+diff -ruN qt563-pristine/include/QtCore/QStringLiteral qt563-polyfill/include/QtCore/QStringLiteral
+--- qt563-pristine/include/QtCore/QStringLiteral	2026-06-26 19:42:30
++++ qt563-polyfill/include/QtCore/QStringLiteral	2026-06-26 19:42:29
+@@ -0,0 +1,7 @@
++// QStringLiteral forwarding header for Qt 5.6.3 builds.
++// QStringLiteral is a macro defined in qstring.h; Qt 5.6.3 does not
++// ship this as a standalone forwarding header.
++#ifndef QSTRINGLITERAL_FWD_H
++#define QSTRINGLITERAL_FWD_H
++#include <QtCore/qstring.h>
++#endif
+diff -ruN qt563-pristine/include/QtCore/QStringView qt563-polyfill/include/QtCore/QStringView
+--- qt563-pristine/include/QtCore/QStringView	2026-06-26 19:42:30
++++ qt563-polyfill/include/QtCore/QStringView	2026-06-26 19:42:30
+@@ -0,0 +1,2 @@
++// Umbrella header: includes qstringview.h for Qt 5.6.3 builds.
++#include "qstringview.h"
+diff -ruN qt563-pristine/include/QtCore/qbytearray.h qt563-polyfill/include/QtCore/qbytearray.h
+--- qt563-pristine/include/QtCore/qbytearray.h	2026-06-26 19:42:30
++++ qt563-polyfill/include/QtCore/qbytearray.h	2026-06-26 19:42:30
+@@ -263,6 +263,13 @@
+     { return toUpper_helper(*this); }
+     QByteArray toUpper() && Q_REQUIRED_RESULT
+     { return toUpper_helper(*this); }
++// compare(const QByteArray &, Qt::CaseSensitivity) - not present in Qt 5.6.3
++int compare(const QByteArray &other, Qt::CaseSensitivity cs = Qt::CaseSensitive) const Q_DECL_NOTHROW
++{
++    return cs == Qt::CaseSensitive
++        ? qstrcmp(constData(), other.constData())
++        : qstricmp(constData(), other.constData());
++}
+     QByteArray trimmed() const & Q_REQUIRED_RESULT
+     { return trimmed_helper(*this); }
+     QByteArray trimmed() && Q_REQUIRED_RESULT
+diff -ruN qt563-pristine/include/QtCore/qcbormap.h qt563-polyfill/include/QtCore/qcbormap.h
+--- qt563-pristine/include/QtCore/qcbormap.h	2026-06-26 19:42:30
++++ qt563-polyfill/include/QtCore/qcbormap.h	2026-06-26 19:42:30
+@@ -0,0 +1,26 @@
++// Minimal QCborMap stub for Qt 5.6.3 builds.
++#ifndef QCBORMAP_H
++#define QCBORMAP_H
++#include <QtCore/qcborvalue.h>
++#include <QtCore/qpair.h>
++#include <QList>
++QT_BEGIN_NAMESPACE
++class Q_CORE_EXPORT QCborMap
++{
++public:
++    using value_type     = QPair<QCborValue, QCborValue>;
++    using iterator       = QList<value_type>::iterator;
++    using const_iterator = QList<value_type>::const_iterator;
++    QCborMap() {}
++    bool isEmpty() const { return m_items.isEmpty(); }
++    int size() const { return m_items.size(); }
++    void insert(const QCborValue &key, const QCborValue &val) { m_items.append({key, val}); }
++    iterator begin() { return m_items.begin(); }
++    iterator end()   { return m_items.end();   }
++    const_iterator begin() const { return m_items.begin(); }
++    const_iterator end()   const { return m_items.end();   }
++private:
++    QList<value_type> m_items;
++};
++QT_END_NAMESPACE
++#endif // QCBORMAP_H
+diff -ruN qt563-pristine/include/QtCore/qcborvalue.h qt563-polyfill/include/QtCore/qcborvalue.h
+--- qt563-pristine/include/QtCore/qcborvalue.h	2026-06-26 19:42:30
++++ qt563-polyfill/include/QtCore/qcborvalue.h	2026-06-26 19:42:30
+@@ -0,0 +1,44 @@
++// Minimal QCborValue stub for Qt 5.6.3 builds.
++// Enum constants follow the CBOR RFC 7049 major-type encoding (not derived from any Qt source).
++#ifndef QCBORVALUE_H
++#define QCBORVALUE_H
++#include <QtCore/qglobal.h>
++#include <QtCore/qstring.h>
++#include <QtCore/qbytearray.h>
++QT_BEGIN_NAMESPACE
++class QCborArray;
++class QCborMap;
++class Q_CORE_EXPORT QCborValue
++{
++public:
++    enum Type {
++        Integer    = 0x00, ByteArray  = 0x40, String     = 0x60,
++        Array      = 0x80, Map        = 0xa0, SimpleType = 0x100,
++        False      = SimpleType + 20, True = SimpleType + 21,
++        Null       = SimpleType + 22, Undefined = SimpleType + 23,
++        Double     = 0x202, Invalid   = -1,
++    };
++    QCborValue() : m_type(Undefined) {}
++    QCborValue(bool b) : m_type(b ? True : False) {}
++    QCborValue(qint64 v) : m_type(Integer), m_integer(v) {}
++    QCborValue(double d) : m_type(Double), m_double(d) {}
++    QCborValue(const QString &s) : m_type(String), m_string(s) {}
++    QCborValue(const QByteArray &ba) : m_type(ByteArray), m_bytes(ba) {}
++    Type type() const { return m_type; }
++    bool isInteger() const { return m_type == Integer; }
++    bool isString() const { return m_type == String; }
++    bool isNull() const { return m_type == Null; }
++    bool isUndefined() const { return m_type == Undefined; }
++    bool isBool() const { return m_type == True || m_type == False; }
++    bool isDouble() const { return m_type == Double; }
++    qint64 toInteger(qint64 defaultValue = 0) const { return isInteger() ? m_integer : defaultValue; }
++    bool toBool(bool defaultValue = false) const { return isBool() ? (m_type == True) : defaultValue; }
++    double toDouble(double d = 0.0) const { return isDouble() ? m_double : d; }
++    QString toString(const QString &d = QString()) const { return isString() ? m_string : d; }
++    QByteArray toByteArray(const QByteArray &d = QByteArray()) const { return (m_type == ByteArray) ? m_bytes : d; }
++private:
++    Type m_type; qint64 m_integer = 0; double m_double = 0.0;
++    QString m_string; QByteArray m_bytes;
++};
++QT_END_NAMESPACE
++#endif // QCBORVALUE_H
+diff -ruN qt563-pristine/include/QtCore/qchar.h qt563-polyfill/include/QtCore/qchar.h
+--- qt563-pristine/include/QtCore/qchar.h	2026-06-26 19:42:30
++++ qt563-polyfill/include/QtCore/qchar.h	2026-06-26 19:42:30
+@@ -572,6 +572,17 @@
+ Q_DECL_CONSTEXPR inline bool operator> (QChar c1, QChar c2) { return  operator< (c2, c1); }
+ Q_DECL_CONSTEXPR inline bool operator<=(QChar c1, QChar c2) { return !operator< (c2, c1); }
+ 
++// Explicit QChar/char comparisons to prevent reversed-candidate C++20
++// ambiguity when operator==(const QString&, uint) is also in scope.
++Q_DECL_CONSTEXPR inline bool operator==(QChar c1, char c2) Q_DECL_NOTHROW
++    { return c1.unicode() == static_cast<ushort>(static_cast<uchar>(c2)); }
++Q_DECL_CONSTEXPR inline bool operator==(char c1, QChar c2) Q_DECL_NOTHROW
++    { return static_cast<ushort>(static_cast<uchar>(c1)) == c2.unicode(); }
++Q_DECL_CONSTEXPR inline bool operator!=(QChar c1, char c2) Q_DECL_NOTHROW
++    { return !(c1 == c2); }
++Q_DECL_CONSTEXPR inline bool operator!=(char c1, QChar c2) Q_DECL_NOTHROW
++    { return !(c1 == c2); }
++
+ #ifndef QT_NO_DATASTREAM
+ Q_CORE_EXPORT QDataStream &operator<<(QDataStream &, QChar);
+ Q_CORE_EXPORT QDataStream &operator>>(QDataStream &, QChar &);
+diff -ruN qt563-pristine/include/QtCore/qcompilerdetection.h qt563-polyfill/include/QtCore/qcompilerdetection.h
+--- qt563-pristine/include/QtCore/qcompilerdetection.h	2026-06-26 19:42:30
++++ qt563-polyfill/include/QtCore/qcompilerdetection.h	2026-06-26 19:42:30
+@@ -227,6 +227,10 @@
+ #  define Q_NORETURN        __attribute__((__noreturn__))
+ #  define Q_REQUIRED_RESULT __attribute__ ((__warn_unused_result__))
+ #  define Q_DECL_PURE_FUNCTION __attribute__((pure))
++// Clear Q_NORETURN so that app overrides of qt_assert/qt_assert_x
++// that return (for unit-test suppression) do not trigger -Winvalid-noreturn.
++#undef Q_NORETURN
++#define Q_NORETURN
+ #  define Q_DECL_CONST_FUNCTION __attribute__((const))
+ #  if !defined(QT_MOC_CPP)
+ #    define Q_PACKED __attribute__ ((__packed__))
+diff -ruN qt563-pristine/include/QtCore/qdatetime.h qt563-polyfill/include/QtCore/qdatetime.h
+--- qt563-pristine/include/QtCore/qdatetime.h	2026-06-26 19:42:30
++++ qt563-polyfill/include/QtCore/qdatetime.h	2026-06-26 19:42:30
+@@ -36,6 +36,7 @@
+ 
+ #include <QtCore/qstring.h>
+ #include <QtCore/qnamespace.h>
++#include <chrono> // required for duration types used in Qt 5.6.3 builds
+ #include <QtCore/qshareddata.h>
+ 
+ #include <limits>
+@@ -50,6 +51,7 @@
+ QT_BEGIN_NAMESPACE
+ 
+ class QTimeZone;
++class QDateTime;
+ 
+ class Q_CORE_EXPORT QDate
+ {
+@@ -100,6 +102,9 @@
+     QDate addYears(int years) const Q_REQUIRED_RESULT;
+     qint64 daysTo(const QDate &) const;
+ 
++    // QDate::startOfDay() — not present in Qt 5.6.3; forward declaration (body below)
++    inline QDateTime startOfDay(Qt::TimeSpec spec = Qt::LocalTime) const;
++
+     Q_DECL_CONSTEXPR bool operator==(const QDate &other) const { return jd == other.jd; }
+     Q_DECL_CONSTEXPR bool operator!=(const QDate &other) const { return jd != other.jd; }
+     Q_DECL_CONSTEXPR bool operator< (const QDate &other) const { return jd <  other.jd; }
+@@ -243,6 +248,8 @@
+     bool isDaylightTime() const;
+ 
+     qint64 toMSecsSinceEpoch() const;
++// toSecsSinceEpoch() — not present in Qt 5.6.3; delegates to toMSecsSinceEpoch()
++inline qint64 toSecsSinceEpoch() const { return toMSecsSinceEpoch() / 1000; }
+     // ### Qt 6: use quint64 instead of uint
+     uint toTime_t() const;
+ 
+@@ -254,6 +261,8 @@
+     void setTimeZone(const QTimeZone &toZone);
+ #endif // QT_BOOTSTRAPPED
+     void setMSecsSinceEpoch(qint64 msecs);
++    // setSecsSinceEpoch() — not present in Qt 5.6.3; delegates to setMSecsSinceEpoch()
++    inline void setSecsSinceEpoch(qint64 secs) { setMSecsSinceEpoch(secs * 1000LL); }
+     // ### Qt 6: use quint64 instead of uint
+     void setTime_t(uint secsSince1Jan1970UTC);
+ 
+@@ -312,6 +321,15 @@
+     static QDateTime fromMSecsSinceEpoch(qint64 msecs, const QTimeZone &timeZone);
+ #endif
+     static qint64 currentMSecsSinceEpoch() Q_DECL_NOTHROW;
++// currentSecsSinceEpoch() / fromSecsSinceEpoch() — not present in Qt 5.6.3
++static qint64 currentSecsSinceEpoch() Q_DECL_NOTHROW
++{ return currentMSecsSinceEpoch() / Q_INT64_C(1000); }
++static QDateTime fromSecsSinceEpoch(qint64 secs, Qt::TimeSpec spec = Qt::LocalTime, int offsetSeconds = 0)
++{ return fromMSecsSinceEpoch(secs * Q_INT64_C(1000), spec, offsetSeconds); }
++#ifndef QT_BOOTSTRAPPED
++static QDateTime fromSecsSinceEpoch(qint64 secs, const QTimeZone &timeZone)
++{ return fromMSecsSinceEpoch(secs * Q_INT64_C(1000), timeZone); }
++#endif
+ 
+ #if defined(Q_OS_MAC) || defined(Q_QDOC)
+     static QDateTime fromCFDate(CFDateRef date);
+@@ -361,6 +379,12 @@
+ Q_CORE_EXPORT uint qHash(const QDateTime &key, uint seed = 0);
+ Q_CORE_EXPORT uint qHash(const QDate &key, uint seed = 0) Q_DECL_NOTHROW;
+ Q_CORE_EXPORT uint qHash(const QTime &key, uint seed = 0) Q_DECL_NOTHROW;
++
++// QDate::startOfDay() body — placed here so QDateTime is fully declared at point of definition
++inline QDateTime QDate::startOfDay(Qt::TimeSpec spec) const
++{
++    return QDateTime(*this, QTime(0, 0, 0), spec);
++}
+ 
+ QT_END_NAMESPACE
+ 
+diff -ruN qt563-pristine/include/QtCore/qdebug.h qt563-polyfill/include/QtCore/qdebug.h
+--- qt563-pristine/include/QtCore/qdebug.h	2026-06-26 19:42:30
++++ qt563-polyfill/include/QtCore/qdebug.h	2026-06-26 19:42:30
+@@ -413,4 +413,31 @@
+ 
+ QT_END_NAMESPACE
+ 
++// operator<<(QDebug, std::pair<T1,T2>) — not present in Qt 5.6.3.
++// Defined here (after QDebug is complete) so it is visible wherever qdebug.h
++// is included.
++#if QT_VERSION < QT_VERSION_CHECK(5, 14, 0)
++#include <utility>
++template <typename T1, typename T2>
++inline QDebug operator<<(QDebug dbg, const std::pair<T1, T2> &pair)
++{
++    QDebugStateSaver saver(dbg);
++    dbg.nospace() << "pair(" << pair.first << ", " << pair.second << ')';
++    return dbg;
++}
++#endif
++
++// GCC C++20 fix: stream unregistered enum to QDebug as integer.
++// The Qt 5.6.3 QEnableIf primary template (forward-declared only) causes a hard error
++// under GCC C++20 for enum types not registered via Q_ENUM/Q_ENUM_NS.
++// This fallback prints the underlying integer value.
++#include <type_traits>
++template<typename T, typename std::enable_if<
++    std::is_enum<T>::value && !QtPrivate::IsQEnumHelper<T>::Value, int>::type = 0>
++inline QDebug operator<<(QDebug dbg, T value)
++{
++    dbg << static_cast<typename std::underlying_type<T>::type>(value);
++    return dbg;
++}
++
+ #endif // QDEBUG_H
+diff -ruN qt563-pristine/include/QtCore/qflags.h qt563-polyfill/include/QtCore/qflags.h
+--- qt563-pristine/include/QtCore/qflags.h	2026-06-26 19:42:30
++++ qt563-polyfill/include/QtCore/qflags.h	2026-06-26 19:42:30
+@@ -139,6 +139,15 @@
+     Q_DECL_CONSTEXPR inline bool operator!() const Q_DECL_NOTHROW { return !i; }
+ 
+     Q_DECL_CONSTEXPR inline bool testFlag(Enum f) const Q_DECL_NOTHROW { return (i & Int(f)) == Int(f) && (Int(f) != 0 || i == Int(f) ); }
++// QFlags::setFlag() — not present in Qt 5.6.3
++Q_DECL_RELAXED_CONSTEXPR inline QFlags &setFlag(Enum f, bool on = true) Q_DECL_NOTHROW
++{
++    if (on)
++        *this |= f;
++    else
++        *this &= ~Int(f);
++    return *this;
++}
+ private:
+ #ifdef Q_COMPILER_INITIALIZER_LISTS
+     Q_DECL_CONSTEXPR static inline Int initializer_list_helper(typename std::initializer_list<Enum>::const_iterator it,
+diff -ruN qt563-pristine/include/QtCore/qfutureinterface.h qt563-polyfill/include/QtCore/qfutureinterface.h
+--- qt563-pristine/include/QtCore/qfutureinterface.h	2026-06-26 19:42:27
++++ qt563-polyfill/include/QtCore/qfutureinterface.h	2026-07-07 20:22:35
+@@ -42,6 +42,24 @@
+ #include <QtCore/qexception.h>
+ #include <QtCore/qresultstore.h>
+ 
++// UBSAN vptr suppression for downcasts in QFutureInterface<T>.
++// Qt 5.6.3's QtPrivate::ResultStoreBase is polymorphic (virtual dtor) and
++// the concrete object owned by QFutureInterfaceBasePrivate is a
++// ResultStoreBase, but resultStore() static_casts it to a derived
++// ResultStore<T> reference. The downcast is benign in practice --
++// ResultStore<T> adds no data members over ResultStoreBase, only T-typed
++// convenience wrappers that forward to base -- but it is formally UB and
++// trips -fsanitize=vptr. Qt 5.15 restructured this class hierarchy so the
++// downcast no longer happens; this is a polyfill for the 5.6.3 pattern.
++#if defined(__has_attribute)
++#  if __has_attribute(no_sanitize)
++#    define QT_NO_SANITIZE_VPTR __attribute__((no_sanitize("vptr")))
++#  endif
++#endif
++#ifndef QT_NO_SANITIZE_VPTR
++#  define QT_NO_SANITIZE_VPTR
++#endif
++
+ QT_BEGIN_NAMESPACE
+ 
+ 
+@@ -150,7 +168,7 @@
+     {
+         refT();
+     }
+-    ~QFutureInterface()
++    QT_NO_SANITIZE_VPTR ~QFutureInterface()
+     {
+         if (!derefT())
+             resultStore().clear();
+@@ -159,7 +177,7 @@
+     static QFutureInterface canceledResult()
+     { return QFutureInterface(State(Started | Finished | Canceled)); }
+ 
+-    QFutureInterface &operator=(const QFutureInterface &other)
++    QT_NO_SANITIZE_VPTR QFutureInterface &operator=(const QFutureInterface &other)
+     {
+         other.refT();
+         if (!derefT())
+@@ -179,14 +197,14 @@
+     inline const T *resultPointer(int index) const;
+     inline QList<T> results();
+ private:
+-    QtPrivate::ResultStore<T> &resultStore()
++    QT_NO_SANITIZE_VPTR QtPrivate::ResultStore<T> &resultStore()
+     { return static_cast<QtPrivate::ResultStore<T> &>(resultStoreBase()); }
+-    const QtPrivate::ResultStore<T> &resultStore() const
++    QT_NO_SANITIZE_VPTR const QtPrivate::ResultStore<T> &resultStore() const
+     { return static_cast<const QtPrivate::ResultStore<T> &>(resultStoreBase()); }
+ };
+ 
+ template <typename T>
+-inline void QFutureInterface<T>::reportResult(const T *result, int index)
++QT_NO_SANITIZE_VPTR inline void QFutureInterface<T>::reportResult(const T *result, int index)
+ {
+     QMutexLocker locker(mutex());
+     if (this->queryState(Canceled) || this->queryState(Finished)) {
+@@ -213,7 +231,7 @@
+ }
+ 
+ template <typename T>
+-inline void QFutureInterface<T>::reportResults(const QVector<T> &_results, int beginIndex, int count)
++QT_NO_SANITIZE_VPTR inline void QFutureInterface<T>::reportResults(const QVector<T> &_results, int beginIndex, int count)
+ {
+     QMutexLocker locker(mutex());
+     if (this->queryState(Canceled) || this->queryState(Finished)) {
+@@ -241,21 +259,21 @@
+ }
+ 
+ template <typename T>
+-inline const T &QFutureInterface<T>::resultReference(int index) const
++QT_NO_SANITIZE_VPTR inline const T &QFutureInterface<T>::resultReference(int index) const
+ {
+     QMutexLocker lock(mutex());
+     return resultStore().resultAt(index).value();
+ }
+ 
+ template <typename T>
+-inline const T *QFutureInterface<T>::resultPointer(int index) const
++QT_NO_SANITIZE_VPTR inline const T *QFutureInterface<T>::resultPointer(int index) const
+ {
+     QMutexLocker lock(mutex());
+     return resultStore().resultAt(index).pointer();
+ }
+ 
+ template <typename T>
+-inline QList<T> QFutureInterface<T>::results()
++QT_NO_SANITIZE_VPTR inline QList<T> QFutureInterface<T>::results()
+ {
+     if (this->isCanceled()) {
+         exceptionStore().throwPossibleException();
+diff -ruN qt563-pristine/include/QtCore/qglobal.h qt563-polyfill/include/QtCore/qglobal.h
+--- qt563-pristine/include/QtCore/qglobal.h	2026-06-26 19:42:30
++++ qt563-polyfill/include/QtCore/qglobal.h	2026-06-26 19:42:30
+@@ -320,6 +320,17 @@
+ #define Q_DISABLE_COPY(Class) \
+     Class(const Class &) Q_DECL_EQ_DELETE;\
+     Class &operator=(const Class &) Q_DECL_EQ_DELETE;
++// Q_DISABLE_MOVE and Q_DISABLE_COPY_MOVE macros — not present in Qt 5.6.3.
++#ifndef Q_DISABLE_MOVE
++#  define Q_DISABLE_MOVE(Class) \
++    Class(Class &&) Q_DECL_EQ_DELETE; \
++    Class &operator=(Class &&) Q_DECL_EQ_DELETE;
++#endif
++#ifndef Q_DISABLE_COPY_MOVE
++#  define Q_DISABLE_COPY_MOVE(Class) \
++    Q_DISABLE_COPY(Class) \
++    Q_DISABLE_MOVE(Class)
++#endif
+ 
+ /*
+    No, this is not an evil backdoor. QT_BUILD_INTERNAL just exports more symbols
+@@ -1095,7 +1106,10 @@
+ 
+ namespace QtPrivate {
+ //like std::enable_if
+-template <bool B, typename T = void> struct QEnableIf;
++// GCC C++20 fix: define QEnableIf primary template as an empty complete type.
++// With an incomplete primary (forward-declared only), accessing ::Type on
++// QEnableIf<false,T> gives a hard error instead of SFINAE.
++template <bool B, typename T = void> struct QEnableIf {};
+ template <typename T> struct QEnableIf<true, T> { typedef T Type; };
+ 
+ template <bool B, typename T, typename F> struct QConditional { typedef T Type; };
+@@ -1116,6 +1130,23 @@
+ #include <QtCore/qglobalstatic.h>
+ #include <QtCore/qnumeric.h>
+ #include <QtCore/qversiontagging.h>
++
++// qAsConst() — not present in Qt 5.6.3.
++#if QT_VERSION < QT_VERSION_CHECK(5, 7, 0)
++template<typename T>
++Q_DECL_CONSTEXPR typename std::add_const<T>::type &qAsConst(T &t) Q_DECL_NOTHROW { return t; }
++template<typename T>
++void qAsConst(const T &&) Q_DECL_EQ_DELETE;
++#endif
++
++// qsizetype — not present in Qt 5.6.3.
++// qptrdiff is already defined by Qt 5.6 as ptrdiff_t; reuse it.
++#if QT_VERSION < QT_VERSION_CHECK(5, 10, 0)
++typedef qptrdiff qsizetype;
++#endif
++
++#include <cassert> // required in Qt 5.6.3 builds
++#include <chrono>  // ensure <chrono> is available without an explicit include in each TU
+ 
+ #endif /* __cplusplus */
+ 
+diff -ruN qt563-pristine/include/QtCore/qhash.h qt563-polyfill/include/QtCore/qhash.h
+--- qt563-pristine/include/QtCore/qhash.h	2026-06-26 19:42:30
++++ qt563-polyfill/include/QtCore/qhash.h	2026-06-26 19:42:30
+@@ -450,6 +450,18 @@
+     inline const_iterator constEnd() const { return const_iterator(e); }
+     inline key_iterator keyBegin() const { return key_iterator(begin()); }
+     inline key_iterator keyEnd() const { return key_iterator(end()); }
++// QHash::key_value_iterator / constKeyValueBegin/End() — not present in Qt 5.6.3
++struct const_key_value_iterator_type {
++    const_iterator i;
++    const_key_value_iterator_type(const_iterator it) : i(it) {}
++    std::pair<Key, T> operator*() const { return {i.key(), i.value()}; }
++    const_key_value_iterator_type& operator++() { ++i; return *this; }
++    bool operator==(const const_key_value_iterator_type& o) const { return i == o.i; }
++    bool operator!=(const const_key_value_iterator_type& o) const { return i != o.i; }
++};
++typedef const_key_value_iterator_type const_key_value_iterator;
++inline const_key_value_iterator constKeyValueBegin() const { return const_iterator(d->firstNode()); }
++inline const_key_value_iterator constKeyValueEnd() const { return const_iterator(e); }
+ 
+     iterator erase(iterator it);
+ 
+@@ -462,6 +474,8 @@
+     const_iterator constFind(const Key &key) const;
+     iterator insert(const Key &key, const T &value);
+     iterator insertMulti(const Key &key, const T &value);
++    // QHash::insert(const QHash &) — not present in Qt 5.6.3
++    inline void insert(const QHash<Key, T> &other) { for (auto it = other.cbegin(); it != other.cend(); ++it) insert(it.key(), it.value()); }
+     QHash &unite(const QHash &other);
+ 
+     // STL compatibility
+diff -ruN qt563-pristine/include/QtCore/qjsondocument.h qt563-polyfill/include/QtCore/qjsondocument.h
+--- qt563-pristine/include/QtCore/qjsondocument.h	2026-06-26 19:42:30
++++ qt563-polyfill/include/QtCore/qjsondocument.h	2026-06-26 19:42:30
+@@ -35,6 +35,7 @@
+ #define QJSONDOCUMENT_H
+ 
+ #include <QtCore/qjsonvalue.h>
++#include <QtCore/qjsonobject.h>
+ 
+ QT_BEGIN_NAMESPACE
+ 
+@@ -129,6 +130,10 @@
+     bool operator!=(const QJsonDocument &other) const { return !(*this == other); }
+ 
+     bool isNull() const;
++
++    // QJsonDocument::operator[] — not present in Qt 5.6.3
++    inline QJsonValue operator[](const QString &key) const { return object()[key]; }
++    inline QJsonValue operator[](QLatin1String key) const { return object()[QString(key)]; }
+ 
+ private:
+     friend class QJsonValue;
+diff -ruN qt563-pristine/include/QtCore/qjsonobject.h qt563-polyfill/include/QtCore/qjsonobject.h
+--- qt563-pristine/include/QtCore/qjsonobject.h	2026-06-26 19:42:30
++++ qt563-polyfill/include/QtCore/qjsonobject.h	2026-06-26 19:42:30
+@@ -232,6 +232,39 @@
+ Q_CORE_EXPORT QDebug operator<<(QDebug, const QJsonObject &);
+ #endif
+ 
++#include <QtCore/qvariant.h>
++
++// Inline override of QJsonObject::toVariantMap() to return qlonglong for integer-valued
++// JSON doubles instead of double, matching the application's expected behaviour.
++// Arrays fall through to the Qt 5.6.3 library implementation.
++inline QVariantMap QJsonObject::toVariantMap() const
++{
++    QVariantMap map;
++    for (const_iterator it = begin(), e = end(); it != e; ++it) {
++        const QJsonValue v = *it;
++        if (v.type() == QJsonValue::Double) {
++            const double d = v.toDouble();
++            if (d == static_cast<double>(static_cast<qlonglong>(d)))
++                map.insert(it.key(), QVariant(static_cast<qlonglong>(d)));
++            else
++                map.insert(it.key(), QVariant(d));
++        } else if (v.type() == QJsonValue::Object) {
++            map.insert(it.key(), QVariant(v.toObject().toVariantMap()));
++        } else {
++            map.insert(it.key(), v.toVariant());
++        }
++    }
++    return map;
++}
++
++// QJsonValue::operator[] bodies — placed here so QJsonObject is fully declared
++inline QJsonValue QJsonValue::operator[](const QString &key) const
++{ return isObject() ? toObject().value(key) : QJsonValue(QJsonValue::Undefined); }
++inline QJsonValue QJsonValue::operator[](QLatin1String key) const
++{ return operator[](QString(key)); }
++inline QJsonValue QJsonValue::operator[](const char *key) const
++{ return operator[](QString::fromLatin1(key)); }
++
+ QT_END_NAMESPACE
+ 
+ #endif // QJSONOBJECT_H
+diff -ruN qt563-pristine/include/QtCore/qjsonvalue.h qt563-polyfill/include/QtCore/qjsonvalue.h
+--- qt563-pristine/include/QtCore/qjsonvalue.h	2026-06-26 19:42:30
++++ qt563-polyfill/include/QtCore/qjsonvalue.h	2026-06-26 19:42:30
+@@ -107,6 +107,11 @@
+     QJsonObject toObject() const;
+     QJsonObject toObject(const QJsonObject &defaultValue) const;
+ 
++    // operator[] declarations — bodies are in qjsonobject.h after QJsonObject is fully declared
++    inline QJsonValue operator[](const QString &key) const;
++    inline QJsonValue operator[](QLatin1String key) const;
++    inline QJsonValue operator[](const char *key) const;
++
+     bool operator==(const QJsonValue &other) const;
+     bool operator!=(const QJsonValue &other) const;
+ 
+diff -ruN qt563-pristine/include/QtCore/qlist.h qt563-polyfill/include/QtCore/qlist.h
+--- qt563-pristine/include/QtCore/qlist.h	2026-06-26 19:42:30
++++ qt563-polyfill/include/QtCore/qlist.h	2026-06-26 19:42:30
+@@ -155,6 +155,12 @@
+     { reserve(int(args.size())); std::copy(args.begin(), args.end(), std::back_inserter(*this)); }
+ #endif
+     bool operator==(const QList<T> &l) const;
++// QList range constructor (InputIterator, InputIterator) — not present in Qt 5.6.3
++template <typename InputIterator,
++          typename = typename std::iterator_traits<InputIterator>::value_type>
++QList(InputIterator first, InputIterator last)
++    : d(const_cast<QListData::Data *>(&QListData::shared_null))
++{ std::copy(first, last, std::back_inserter(*this)); }
+     inline bool operator!=(const QList<T> &l) const { return !(*this == l); }
+ 
+     inline int size() const Q_DECL_NOTHROW { return p.size(); }
+@@ -204,6 +210,7 @@
+     T takeLast();
+     void move(int from, int to);
+     void swap(int i, int j);
++    inline void swapItemsAt(int i, int j) { swap(i, j); } // delegates to swap(); not present in Qt 5.6.3
+     int indexOf(const T &t, int from = 0) const;
+     int lastIndexOf(const T &t, int from = -1) const;
+     bool contains(const T &t) const;
+diff -ruN qt563-pristine/include/QtCore/qlocale.h qt563-polyfill/include/QtCore/qlocale.h
+--- qt563-pristine/include/QtCore/qlocale.h	2026-06-26 19:42:30
++++ qt563-polyfill/include/QtCore/qlocale.h	2026-06-26 19:42:29
+@@ -819,13 +819,22 @@
+         Bonaire = 255,
+         SintMaarten = 256,
+         Kosovo = 257,
++// Country enum additions — not present in Qt 5.6.3
++EuropeanUnion = 258,
++Europe = 259,
++OutlyingOceania = 260,
++World = 261,
++// Country enum aliases for renamed values
++LatinAmerica = LatinAmericaAndTheCaribbean,
++TokelauCountry = Tokelau,
++TuvaluCountry = Tuvalu,
+         DemocraticRepublicOfCongo = CongoKinshasa,
+         PeoplesRepublicOfCongo = CongoBrazzaville,
+         DemocraticRepublicOfKorea = NorthKorea,
+         RepublicOfKorea = SouthKorea,
+         RussianFederation = Russia,
+         SyrianArabRepublic = Syria,
+-        LastCountry = Kosovo
++        LastCountry = World
+     };
+ // GENERATED PART ENDS HERE
+ 
+diff -ruN qt563-pristine/include/QtCore/qmap.h qt563-polyfill/include/QtCore/qmap.h
+--- qt563-pristine/include/QtCore/qmap.h	2026-06-26 19:42:31
++++ qt563-polyfill/include/QtCore/qmap.h	2026-06-26 19:42:30
+@@ -557,6 +557,37 @@
+     inline const_iterator cend() const { return const_iterator(d->end()); }
+     inline key_iterator keyBegin() const { return key_iterator(begin()); }
+     inline key_iterator keyEnd() const { return key_iterator(end()); }
++// QMap::key_value_iterator / keyValueBegin/End() — not present in Qt 5.6.3
++struct key_value_iterator_type {
++    iterator i;
++    key_value_iterator_type(iterator it) : i(it) {}
++    std::pair<Key, T> operator*() const { return {i.key(), i.value()}; }
++    key_value_iterator_type& operator++() { ++i; return *this; }
++    key_value_iterator_type operator++(int) { key_value_iterator_type tmp = *this; ++i; return tmp; }
++    bool operator==(const key_value_iterator_type& o) const { return i == o.i; }
++    bool operator!=(const key_value_iterator_type& o) const { return i != o.i; }
++    iterator base() const { return i; }
++};
++typedef key_value_iterator_type key_value_iterator;
++
++struct const_key_value_iterator_type {
++    const_iterator i;
++    const_key_value_iterator_type(const_iterator it) : i(it) {}
++    std::pair<Key, T> operator*() const { return {i.key(), i.value()}; }
++    const_key_value_iterator_type& operator++() { ++i; return *this; }
++    const_key_value_iterator_type operator++(int) { const_key_value_iterator_type tmp = *this; ++i; return tmp; }
++    bool operator==(const const_key_value_iterator_type& o) const { return i == o.i; }
++    bool operator!=(const const_key_value_iterator_type& o) const { return i != o.i; }
++    const_iterator base() const { return i; }
++};
++typedef const_key_value_iterator_type const_key_value_iterator;
++
++inline key_value_iterator keyValueBegin() { return iterator(d->begin()); }
++inline key_value_iterator keyValueEnd() { return iterator(d->end()); }
++inline const_key_value_iterator keyValueBegin() const { return const_iterator(d->begin()); }
++inline const_key_value_iterator keyValueEnd() const { return const_iterator(d->end()); }
++inline const_key_value_iterator constKeyValueBegin() const { return const_iterator(d->begin()); }
++inline const_key_value_iterator constKeyValueEnd() const { return const_iterator(d->end()); }
+     iterator erase(iterator it);
+ 
+     // more Qt
+@@ -574,6 +605,8 @@
+     iterator insert(const_iterator pos, const Key &key, const T &value);
+     iterator insertMulti(const Key &key, const T &value);
+     iterator insertMulti(const_iterator pos, const Key &akey, const T &avalue);
++    // QMap::insert(const QMap &) — not present in Qt 5.6.3
++    void insert(const QMap<Key, T> &other) { for (auto it = other.constBegin(); it != other.constEnd(); ++it) insert(it.key(), it.value()); }
+     QMap<Key, T> &unite(const QMap<Key, T> &other);
+ 
+     // STL compatibility
+diff -ruN qt563-pristine/include/QtCore/qmetaobject.h qt563-polyfill/include/QtCore/qmetaobject.h
+--- qt563-pristine/include/QtCore/qmetaobject.h	2026-06-26 19:42:31
++++ qt563-polyfill/include/QtCore/qmetaobject.h	2026-06-26 19:42:30
+@@ -224,12 +224,30 @@
+ 
+     inline bool isValid() const { return name() != Q_NULLPTR; }
+ 
++    // valueToString() — safe enum-value → string conversion with non-null fallback.
++    // Unlike valueToKey() which returns nullptr for unregistered values, this
++    // returns the fallback string so callers avoid QString(nullptr) issues.
++    inline QString valueToString(int value, const QString& fallback = {}) const
++    {
++        const char *key = valueToKey(value);
++        return key ? QString::fromLatin1(key) : fallback;
++    }
++
+     template<typename T> static QMetaEnum fromType() {
+-        Q_STATIC_ASSERT_X(QtPrivate::IsQEnumHelper<T>::Value,
+-                          "QMetaEnum::fromType only works with enums declared as Q_ENUM or Q_FLAG");
+-        const QMetaObject *metaObject = qt_getEnumMetaObject(T());
+-        const char *name = qt_getEnumName(T());
+-        return metaObject->enumerator(metaObject->indexOfEnumerator(name));
++        // Tolerate enums not registered via Q_ENUM (e.g. Q_ENUM_NS stubs). Returns invalid QMetaEnum gracefully.
++        if constexpr (QtPrivate::IsQEnumHelper<T>::Value) {
++            const QMetaObject *metaObject = qt_getEnumMetaObject(T());
++            const char *name = qt_getEnumName(T());
++            // Guard against -1 from indexOfEnumerator (e.g. static-init order
++            // fiasco: callers initialised before the namespace staticMetaObject
++            // is ready). enumerator(-1) hits Q_ASSERT inside Qt; return invalid
++            // QMetaEnum instead so callers can test isValid().
++            int idx = metaObject->indexOfEnumerator(name);
++            if (idx < 0) return QMetaEnum{};
++            return metaObject->enumerator(idx);
++        } else {
++            return QMetaEnum{};
++        }
+     }
+ 
+ private:
+diff -ruN qt563-pristine/include/QtCore/qmetatype.h qt563-polyfill/include/QtCore/qmetatype.h
+--- qt563-pristine/include/QtCore/qmetatype.h	2026-06-26 19:42:31
++++ qt563-polyfill/include/QtCore/qmetatype.h	2026-06-26 19:42:29
+@@ -38,6 +38,7 @@
+ #include <QtCore/qglobal.h>
+ #include <QtCore/qatomic.h>
+ #include <QtCore/qbytearray.h>
++#include <QtCore/qdatetime.h> // required for date/time metatype registration
+ #include <QtCore/qvarlengtharray.h>
+ #include <QtCore/qisenum.h>
+ #include <QtCore/qtypetraits.h>
+@@ -390,6 +391,8 @@
+     struct IsMetaTypePair;
+     template<typename, typename>
+     struct MetaTypeSmartPointerHelper;
++    template<typename, bool>
++    struct QMetaTypeEnumConverterHelper;
+ }
+ 
+ class Q_CORE_EXPORT QMetaType {
+@@ -694,6 +697,7 @@
+     template<typename, bool> friend struct QtPrivate::AssociativeValueTypeIsMetaType;
+     template<typename, bool> friend struct QtPrivate::IsMetaTypePair;
+     template<typename, typename> friend struct QtPrivate::MetaTypeSmartPointerHelper;
++    template<typename, bool> friend struct QtPrivate::QMetaTypeEnumConverterHelper;
+ #endif
+ #else
+ public:
+@@ -1575,6 +1579,50 @@
+     Q_CORE_EXPORT bool isBuiltinType(const QByteArray &type);
+ } // namespace QtPrivate
+ 
++namespace QtPrivate {
++    // Enum value → key name helper. Defined in qmetaobject.cpp
++    // (exported from QtCore) so QMetaTypeEnumConverterHelper can call it
++    // without pulling in qmetaobject.h (circular include via qvariant.h).
++    Q_CORE_EXPORT const char *qt563_enumValueToKey(const QMetaObject *mo, const char *enumName, int value) Q_DECL_NOEXCEPT;
++
++    // Registers T->int and T->QString converters for Q_ENUM/Q_ENUM_NS types so
++    // that QVariant::toString() returns the enum key name (e.g. "Sports").
++    // registerConverterFunction() is used directly (not registerConverter<T,int>)
++    // to avoid calling qMetaTypeId<T>() recursively before the atomic id is stored.
++    template <typename T, bool IsEnum = IsQEnumHelper<T>::Value>
++    struct QMetaTypeEnumConverterHelper
++    {
++        static void registerConverter(int) {}
++    };
++    template <typename T>
++    struct QMetaTypeEnumConverterHelper<T, true>
++    {
++        struct ToInt : AbstractConverterFunction {
++            ToInt() : AbstractConverterFunction(doConvert) {}
++            static bool doConvert(const AbstractConverterFunction *, const void *src, void *dst)
++            { *static_cast<int *>(dst) = static_cast<int>(*static_cast<const T *>(src)); return true; }
++        };
++        struct ToQString : AbstractConverterFunction {
++            ToQString() : AbstractConverterFunction(doConvert) {}
++            static bool doConvert(const AbstractConverterFunction *, const void *src, void *dst)
++            {
++                const int intVal = static_cast<int>(*static_cast<const T *>(src));
++                const char *key = QtPrivate::qt563_enumValueToKey(
++                    qt_getEnumMetaObject(T{}), qt_getEnumName(T{}), intVal);
++                *static_cast<QString *>(dst) = key ? QString::fromLatin1(key) : QString::number(intVal);
++                return true;
++            }
++        };
++        static void registerConverter(int id)
++        {
++            static ToInt toInt;
++            static ToQString toQString;
++            QMetaType::registerConverterFunction(&toInt, id, QMetaType::Int);
++            QMetaType::registerConverterFunction(&toQString, id, QMetaType::QString);
++        }
++    };
++} // namespace QtPrivate
++
+ template <typename T, int =
+     QtPrivate::IsPointerToTypeDerivedFromQObject<T>::Value ? QMetaType::PointerToQObject :
+     QtPrivate::IsGadgetHelper<T>::Value                    ? QMetaType::IsGadget :
+@@ -1698,6 +1746,7 @@
+         QtPrivate::AssociativeContainerConverterHelper<T>::registerConverter(id);
+         QtPrivate::MetaTypePairHelper<T>::registerConverter(id);
+         QtPrivate::MetaTypeSmartPointerHelper<T>::registerConverter(id);
++        QtPrivate::QMetaTypeEnumConverterHelper<T>::registerConverter(id);
+     }
+ 
+     return id;
+diff -ruN qt563-pristine/include/QtCore/qnamespace.h qt563-polyfill/include/QtCore/qnamespace.h
+--- qt563-pristine/include/QtCore/qnamespace.h	2026-06-26 19:42:31
++++ qt563-polyfill/include/QtCore/qnamespace.h	2026-06-26 19:42:30
+@@ -498,6 +498,11 @@
+         AA_SetPalette = 19,
+         AA_EnableHighDpiScaling = 20,
+         AA_DisableHighDpiScaling = 21,
++        AA_UseStyleSheetPropagationInWidgetStyles = 22,
++        AA_DontUseNativeDialogs = 23,
++        AA_SynthesizeMouseForUnhandledTabletEvents = 24,
++        AA_CompressHighFrequencyEvents = 25,
++        AA_DontCheckOpenGLContextThreadAffinity = 26,
+ 
+         // Add new attributes before this line
+         AA_AttributeCount
+@@ -1190,7 +1195,8 @@
+         SystemLocaleLongDate,
+         DefaultLocaleShortDate,
+         DefaultLocaleLongDate,
+-        RFC2822Date        // RFC 2822 (+ 850 and 1036 during parsing)
++        RFC2822Date,       // RFC 2822 (+ 850 and 1036 during parsing)
++        ISODateWithMs      // ISO 8601 with milliseconds — not present in Qt 5.6.3
+     };
+ 
+     enum TimeSpec {
+diff -ruN qt563-pristine/include/QtCore/qobject.h qt563-polyfill/include/QtCore/qobject.h
+--- qt563-pristine/include/QtCore/qobject.h	2026-06-26 19:42:31
++++ qt563-polyfill/include/QtCore/qobject.h	2026-06-26 19:42:30
+@@ -46,6 +46,11 @@
+ #endif
+ #include <QtCore/qscopedpointer.h>
+ #include <QtCore/qmetatype.h>
++#include <QtCore/qsharedpointer.h> // required for invokeMethod implementation
++#include <QtCore/qhash.h> // required for QObject-related utilities
++#include <memory>
++#include <condition_variable> // for BlockingQueuedConnection implementation
++#include <mutex> // for BlockingQueuedConnection implementation
+ 
+ #include <QtCore/qobject_impl.h>
+ 
+@@ -632,6 +637,165 @@
+ 
+ QT_END_NAMESPACE
+ 
++#endif
++
++// Include QRegularExpression after QObject is defined to avoid circular includes
++#ifndef QT_NO_REGULAREXPRESSION
++#include <QtCore/qregularexpression.h>
++#endif
++
++// QMetaObject::invokeMethod functor overloads for Qt 5.6.3 builds.
++// Definitions live here so every TU that includes QObject sees the template body.
++//
++// We use the "destroyed-signal trick" for queued dispatch:
++//   1. Create a local QObject tmp.
++//   2. Connect tmp.destroyed → context slot via Qt::QueuedConnection.
++//   3. Let tmp be destroyed at end of scope.
++//   4. Qt's QueuedConnection calls QCoreApplication::postEvent() immediately,
++//      posting the event directly to context->thread()'s queue WITHOUT requiring
++//      the calling thread to have a running event loop (unlike QTimer::singleShot).
++//
++// Thread-check for AutoConnection: A freshly constructed QObject always belongs
++// to the thread that constructs it (Qt invariant). So comparing tmp.thread() with
++// context->thread() gives the equivalent of QThread::currentThread() vs
++// context->thread() — WITHOUT including qthread.h (which depends on qobject.h
++// and would create a circular include leaving QThread as an incomplete type in
++// some TUs such as FluxServer.cpp — the exact failure seen in 33a3df4af3b).
++//
++// Qt::AutoConnection    → same thread as context: synchronous (mirrors real Qt)
++//                         different thread: post via destroyed-signal trick
++// Qt::DirectConnection  → synchronous
++// Qt::QueuedConnection  → post via destroyed-signal trick
++// Qt::BlockingQueuedConnection → post via destroyed-signal trick, then block
++//                         the calling thread on a std::condition_variable until
++//                         the slot has finished executing on context's thread.
++//                         Same-thread BlockingQueuedConnection would deadlock
++//                         (matching real Qt's qFatal) — we degrade to direct
++//                         invocation to avoid hanging the caller.
++
++template<typename Class, typename MemberClass, typename Return>
++inline bool QMetaObject::invokeMethod(Class *context, Return (MemberClass::*fn)(),
++                                      Qt::ConnectionType type)
++{
++    // Mask out Qt::UniqueConnection flag (0x80) before comparing.
++    const auto baseType = static_cast<Qt::ConnectionType>(type & ~static_cast<int>(Qt::UniqueConnection));
++    if (baseType == Qt::DirectConnection)
++    {
++        (context->*fn)();
++        return true;
++    }
++    // A freshly constructed QObject belongs to the current thread (Qt invariant).
++    // Use tmp.thread() instead of QThread::currentThread() to avoid circular include.
++    QObject tmp;
++    if ((baseType == Qt::AutoConnection || baseType == Qt::BlockingQueuedConnection)
++        && tmp.thread() == context->thread())
++    {
++        // Same-thread fast path (AutoConnection) / deadlock avoidance (BlockingQueuedConnection).
++        (context->*fn)();
++        return true;
++    }
++    if (baseType == Qt::BlockingQueuedConnection)
++    {
++        // Cross-thread synchronous: post via destroyed-signal trick, then wait
++        // on a condition variable that the slot wrapper signals after the call.
++        struct BlockingState { std::mutex m; std::condition_variable cv; bool done = false; };
++        auto state = std::make_shared<BlockingState>();
++        {
++            QObject blockingTmp;
++            QObject::connect(&blockingTmp, &QObject::destroyed, context,
++                             [state, context, fn](QObject*) mutable {
++                                 (context->*fn)();
++                                 std::lock_guard<std::mutex> lock(state->m);
++                                 state->done = true;
++                                 state->cv.notify_one();
++                             },
++                             Qt::QueuedConnection);
++        } // blockingTmp destroyed → event posted to context->thread()
++        std::unique_lock<std::mutex> lock(state->m);
++        state->cv.wait(lock, [&]{ return state->done; });
++        return true;
++    }
++    // Cross-thread or explicit Queued: post to context's thread via the destroyed-signal trick.
++    QObject::connect(&tmp, &QObject::destroyed, context,
++                     [context, fn](QObject*) mutable { (context->*fn)(); },
++                     Qt::QueuedConnection);
++    return true;
++    // tmp is destroyed here → emits destroyed() → event posted to context->thread()
++}
++
++template<typename Functor>
++inline bool QMetaObject::invokeMethod(QObject *context, Functor fn,
++                                      Qt::ConnectionType type)
++{
++    const auto baseType = static_cast<Qt::ConnectionType>(type & ~static_cast<int>(Qt::UniqueConnection));
++    if (baseType == Qt::DirectConnection)
++    {
++        fn();
++        return true;
++    }
++    QObject tmp;
++    if ((baseType == Qt::AutoConnection || baseType == Qt::BlockingQueuedConnection)
++        && tmp.thread() == context->thread())
++    {
++        // Same-thread fast path (AutoConnection) / deadlock avoidance (BlockingQueuedConnection).
++        fn();
++        return true;
++    }
++    if (baseType == Qt::BlockingQueuedConnection)
++    {
++        // Cross-thread synchronous: post via destroyed-signal trick, then wait
++        // on a condition variable that the slot wrapper signals after the call.
++        struct BlockingState { std::mutex m; std::condition_variable cv; bool done = false; };
++        auto state = std::make_shared<BlockingState>();
++        auto sharedFn = std::make_shared<Functor>(std::move(fn));
++        {
++            QObject blockingTmp;
++            QObject::connect(&blockingTmp, &QObject::destroyed, context,
++                             [state, sharedFn](QObject*) {
++                                 (*sharedFn)();
++                                 std::lock_guard<std::mutex> lock(state->m);
++                                 state->done = true;
++                                 state->cv.notify_one();
++                             },
++                             Qt::QueuedConnection);
++        } // blockingTmp destroyed → event posted to context->thread()
++        std::unique_lock<std::mutex> lock(state->m);
++        state->cv.wait(lock, [&]{ return state->done; });
++        return true;
++    }
++    // Wrap fn in shared_ptr so the capturing lambda is copy-constructible even
++    // when Functor is move-only (Qt requires slot storage to be copyable).
++    auto sharedFn = std::make_shared<Functor>(std::move(fn));
++    QObject::connect(&tmp, &QObject::destroyed, context,
++                     [sharedFn](QObject*) { (*sharedFn)(); },
++                     Qt::QueuedConnection);
++    return true;
++    // tmp is destroyed here → emits destroyed() → event posted to context->thread()
++}
++
++// Q_ENUM_NS macro override for Qt 5.6.3 builds.
++// The QMetaType converters cannot be registered safely on Qt 5.6.3:
++// the registerConverter<int, ENUM> call causes QMetaTypeId<ENUM> to be
++// implicitly instantiated at the point of Q_ENUM_NS expansion (inside the
++// namespace, before Q_DECLARE_METATYPE), which then conflicts with any explicit
++// Q_DECLARE_METATYPE specialisation lower in the same header.
++//
++// We CAN however emit the namespace-scope qt_getEnumMetaObject / qt_getEnumName
++// free functions required by QMetaEnum::fromType<T>() and the QDebug enum
++// printer.  These reference only the already-declared staticMetaObject and the
++// enum type itself — no QMetaTypeId instantiation needed.
++//
++// QMetaType string converters (QString ↔ ENUM) must be registered separately
++// at run-time; see e.g. ViewingModeModelImpl.cpp for an example pattern.
++#undef Q_ENUM_NS
++#ifdef Q_MOC_RUN
++// The moc parser already recognises Q_ENUM_NS and generates the staticMetaObject
++// enum data for it; no extra expansion needed during the moc pass.
++#  define Q_ENUM_NS(ENUM)
++#else
++#  define Q_ENUM_NS(ENUM) \
++    inline const QMetaObject *qt_getEnumMetaObject(ENUM) Q_DECL_NOEXCEPT { return &staticMetaObject; } \
++    inline const char *qt_getEnumName(ENUM) Q_DECL_NOEXCEPT { return #ENUM; }
+ #endif
+ 
+ #endif // QOBJECT_H
+diff -ruN qt563-pristine/include/QtCore/qobjectdefs.h qt563-polyfill/include/QtCore/qobjectdefs.h
+--- qt563-pristine/include/QtCore/qobjectdefs.h	2026-06-26 19:42:31
++++ qt563-polyfill/include/QtCore/qobjectdefs.h	2026-06-26 19:42:30
+@@ -468,6 +468,14 @@
+         return invokeMethod(obj, member, Qt::AutoConnection, QGenericReturnArgument(), val0,
+                 val1, val2, val3, val4, val5, val6, val7, val8, val9);
+     }
++// invokeMethod functor overload declarations — bodies are in qobject.h
++// (placed there to avoid circular includes through qmetaobject.h → qobject.h).
++template<typename Class, typename MemberClass, typename Return>
++static bool invokeMethod(Class *context, Return (MemberClass::*fn)(),
++                         Qt::ConnectionType type = Qt::AutoConnection);
++template<typename Functor>
++static bool invokeMethod(QObject *context, Functor fn,
++                         Qt::ConnectionType type = Qt::AutoConnection);
+ 
+     QObject *newInstance(QGenericArgument val0 = QGenericArgument(Q_NULLPTR),
+                          QGenericArgument val1 = QGenericArgument(),
+@@ -548,6 +556,40 @@
+         enum { Value =  sizeof(test(&Object::qt_metacall)) == sizeof(int) };
+     };
+ }
++
++// Q_NAMESPACE and Q_ENUM_NS macros — not present in Qt 5.6.3.
++// Q_NAMESPACE declares a namespace-scope staticMetaObject; Q_ENUM_NS emits
++// the qt_getEnumMetaObject / qt_getEnumName free functions for it.
++//
++// The moc modifications in qt563_source.patch teach the Qt 5.6.3 moc binary to
++// parse Q_NAMESPACE and Q_ENUM_NS and generate a proper staticMetaObject for
++// each annotated namespace.  The generated .cpp file provides the definition;
++// here we only declare it (extern) so all translation units that include the
++// header can link to it.
++//
++// Under Q_MOC_RUN (when the moc preprocessor reads this header) the macro must
++// expand to nothing — the moc parser recognises the Q_NAMESPACE token directly
++// via its source-level modifications and does not need the macro expansion.
++#ifndef Q_NAMESPACE
++#  ifdef Q_MOC_RUN
++#    define Q_NAMESPACE
++#  else
++#    define Q_NAMESPACE \
++    extern const QMetaObject staticMetaObject;
++#  endif
++#endif
++#ifndef Q_NAMESPACE_EXPORT
++#  define Q_NAMESPACE_EXPORT(x)
++#endif
++
++// Q_ENUM_NS is defined in qobject.h (after qmetaobject.h is included) to
++// avoid a circular include chain through qmetaobject.h → qobject.h.
++#ifndef Q_ENUM_NS
++#  define Q_ENUM_NS(x)
++#endif
++#ifndef Q_FLAG_NS
++#  define Q_FLAG_NS(x)
++#endif
+ 
+ QT_END_NAMESPACE
+ 
+diff -ruN qt563-pristine/include/QtCore/qscopedpointer.h qt563-polyfill/include/QtCore/qscopedpointer.h
+--- qt563-pristine/include/QtCore/qscopedpointer.h	2026-06-26 19:42:31
++++ qt563-polyfill/include/QtCore/qscopedpointer.h	2026-06-26 19:42:30
+@@ -135,6 +135,11 @@
+         return d;
+     }
+ 
++inline T *get() const // QScopedPointer::get() — not present in Qt 5.6.3
++{
++    return d;
++}
++
+     inline bool isNull() const
+     {
+         return !d;
+diff -ruN qt563-pristine/include/QtCore/qscopeguard.h qt563-polyfill/include/QtCore/qscopeguard.h
+--- qt563-pristine/include/QtCore/qscopeguard.h	2026-06-26 19:42:31
++++ qt563-polyfill/include/QtCore/qscopeguard.h	2026-06-26 19:42:29
+@@ -0,0 +1,45 @@
++// QScopeGuard RAII guard class for Qt 5.6.3 builds.
++#pragma once
++
++#include <QtCore/qglobal.h>
++#include <utility>
++
++QT_BEGIN_NAMESPACE
++
++template <typename F>
++class QScopeGuard
++{
++public:
++    explicit QScopeGuard(F &&f) noexcept
++        : m_func(std::move(f)), m_dismissed(false) {}
++
++    explicit QScopeGuard(const F &f) noexcept
++        : m_func(f), m_dismissed(false) {}
++
++    QScopeGuard(QScopeGuard &&other) noexcept
++        : m_func(std::move(other.m_func)), m_dismissed(other.m_dismissed)
++    {
++        other.dismiss();
++    }
++
++    ~QScopeGuard()
++    {
++        if (!m_dismissed)
++            m_func();
++    }
++
++    void dismiss() noexcept { m_dismissed = true; }
++
++private:
++    Q_DISABLE_COPY(QScopeGuard)
++    F m_func;
++    bool m_dismissed;
++};
++
++template <typename F>
++QScopeGuard<typename std::decay<F>::type> qScopeGuard(F &&f)
++{
++    return QScopeGuard<typename std::decay<F>::type>(std::forward<F>(f));
++}
++
++QT_END_NAMESPACE
+diff -ruN qt563-pristine/include/QtCore/qset.h qt563-polyfill/include/QtCore/qset.h
+--- qt563-pristine/include/QtCore/qset.h	2026-06-26 19:42:31
++++ qt563-polyfill/include/QtCore/qset.h	2026-06-26 19:42:30
+@@ -61,6 +61,10 @@
+ #endif
+     // compiler-generated copy/move ctor/assignment operators are fine!
+     // compiler-generated destructor is fine!
++// QSet range constructor (first, last) — not present in Qt 5.6.3
++template <typename InputIterator>
++explicit QSet(InputIterator first, InputIterator last)
++{ while (first != last) { insert(*first); ++first; } }
+ 
+     inline void swap(QSet<T> &other) Q_DECL_NOTHROW { q_hash.swap(other.q_hash); }
+ 
+diff -ruN qt563-pristine/include/QtCore/qsharedpointer_impl.h qt563-polyfill/include/QtCore/qsharedpointer_impl.h
+--- qt563-pristine/include/QtCore/qsharedpointer_impl.h	2026-06-26 19:42:31
++++ qt563-polyfill/include/QtCore/qsharedpointer_impl.h	2026-06-26 19:42:30
+@@ -306,7 +306,10 @@
+     inline T *operator->() const { return data(); }
+ 
+     QSharedPointer() : value(Q_NULLPTR), d(Q_NULLPTR) { }
++    // QSharedPointer(nullptr_t) — not present in Qt 5.6.3
++    QSharedPointer(std::nullptr_t) : value(Q_NULLPTR), d(Q_NULLPTR) { }
+     ~QSharedPointer() { deref(); }
++    inline T *get() const noexcept { return data(); }  // QSharedPointer::get() — not present in Qt 5.6.3
+ 
+     inline explicit QSharedPointer(T *ptr) : value(ptr) // noexcept
+     { internalConstruct(ptr, QtSharedPointer::NormalDeleter()); }
+@@ -429,7 +432,10 @@
+         result.d = Private::create(&result.value, destroy);
+ 
+         // now initialize the data
+-        new (result.data()) T(std::forward<Args>(arguments)...);
++        // GCC 14 rejects placement new with 'const void*'; strip const for the
++        // placement-new call (the object itself is still constructed as T).
++        typedef typename std::remove_const<T>::type MutableT;
++        new (const_cast<MutableT*>(result.data())) T(std::forward<Args>(arguments)...);
+         result.d->setQObjectShared(result.value, true);
+ # ifdef QT_SHAREDPOINTER_TRACK_POINTERS
+         internalSafetyCheckAdd(result.d, result.value);
+@@ -924,6 +930,12 @@
+ }
+ 
+ #ifndef QT_NO_QOBJECT
++// GCC 14 strict two-phase lookup: forward-declare qobject_cast so it is visible
++// at template definition time (not just instantiation time).
++class QObject;
++template <class T> T qobject_cast(QObject *object);
++template <class T> T qobject_cast(const QObject *object);
++
+ template <class X, class T>
+ Q_INLINE_TEMPLATE QSharedPointer<X> qSharedPointerObjectCast(const QSharedPointer<T> &src)
+ {
+diff -ruN qt563-pristine/include/QtCore/qstring.h qt563-polyfill/include/QtCore/qstring.h
+--- qt563-pristine/include/QtCore/qstring.h	2026-06-26 19:42:31
++++ qt563-polyfill/include/QtCore/qstring.h	2026-06-26 19:42:30
+@@ -156,7 +156,7 @@
+ 
+ #ifndef QT_NO_UNICODE_LITERAL
+ #  define QT_UNICODE_LITERAL(str) QT_UNICODE_LITERAL_II(str)
+-# if defined(Q_COMPILER_LAMBDA)
++# if defined(Q_COMPILER_LAMBDA) && __cplusplus < 202002L
+ 
+ #  define QStringLiteral(str) \
+     ([]() -> QString { \
+@@ -178,7 +178,7 @@
+ // fallback, return a temporary QString
+ // source code is assumed to be encoded in UTF-8
+ 
+-# define QStringLiteral(str) QString::fromUtf8("" str "", sizeof(str) - 1)
++# define QStringLiteral(str) (QString::fromUtf8("" str ""))
+ #endif
+ 
+ #define Q_STATIC_STRING_DATA_HEADER_INITIALIZER_WITH_OFFSET(size, offset) \
+@@ -491,6 +491,13 @@
+ #ifndef QT_NO_REGULAREXPRESSION
+     QStringList split(const QRegularExpression &sep, SplitBehavior behavior = KeepEmptyParts) const Q_REQUIRED_RESULT;
+     QVector<QStringRef> splitRef(const QRegularExpression &sep, SplitBehavior behavior = KeepEmptyParts) const Q_REQUIRED_RESULT;
++    // front()/back()/constFirst()/constLast() — not present in Qt 5.6.3
++    inline QChar front() const { return at(0); }
++    QCharRef front();
++    inline QChar back() const { return at(size()-1); }
++    QCharRef back();
++    inline QChar constFirst() const { return at(0); }
++    inline QChar constLast() const { return at(size()-1); }
+ #endif
+     enum NormalizationForm {
+         NormalizationForm_D,
+@@ -1054,6 +1061,9 @@
+     char toLatin1() const { return QChar(*this).toLatin1(); }
+     ushort unicode() const { return QChar(*this).unicode(); }
+     ushort& unicode() { return s.data()[i].unicode(); }
++    // QCharRef nullptr comparisons — allows charRef != nullptr bounds checks.
++    inline bool operator!=(std::nullptr_t) const { return !QChar(*this).isNull(); }
++    inline bool operator==(std::nullptr_t) const { return QChar(*this).isNull(); }
+ 
+ };
+ Q_DECLARE_TYPEINFO(QCharRef, Q_MOVABLE_TYPE);
+@@ -1094,6 +1104,9 @@
+ { Q_ASSERT(i >= 0); return QCharRef(*this, i); }
+ inline QCharRef QString::operator[](uint i)
+ { return QCharRef(*this, i); }
++inline QCharRef QString::front() { return (*this)[0]; }
++inline QCharRef QString::back() { return (*this)[size()-1]; }
++
+ inline QString::iterator QString::begin()
+ { detach(); return reinterpret_cast<QChar*>(d->data()); }
+ inline QString::const_iterator QString::begin() const
+@@ -1611,5 +1624,43 @@
+ #if defined(QT_USE_FAST_OPERATOR_PLUS) || defined(QT_USE_QSTRINGBUILDER)
+ #include <QtCore/qstringbuilder.h>
+ #endif
++
++// Include QStringView stub (defined in qstringview.h for Qt 5.6.3 builds)
++#include <QtCore/qstringview.h>
++// std::hash specializations for QString and QByteArray — not present in Qt 5.6.3.
++// Required to use these types as std::unordered_map / std::unordered_set keys.
++#if QT_VERSION < QT_VERSION_CHECK(5, 14, 0)
++#include <functional>
++#include "qhashfunctions.h"
++namespace std {
++    template <> struct hash<QString> {
++        size_t operator()(const QString &s) const noexcept
++        { return static_cast<size_t>(qHash(s)); }
++    };
++    template <> struct hash<QByteArray> {
++        size_t operator()(const QByteArray &b) const noexcept
++        { return static_cast<size_t>(qHash(b)); }
++    };
++}
++#endif
++
++// Include qhash.h after QString is defined (required by some callers of this header)
++#include <QtCore/qhash.h>
++
++// Qt::SplitBehaviorFlags aliases — not present in Qt 5.6.3.
++// Must be placed here (after class QString is fully defined) because qnamespace.h is
++// included by qstring.h and QString would be incomplete there.
++QT_BEGIN_NAMESPACE
++namespace Qt {
++    using SplitBehaviorFlags = QString::SplitBehavior;
++    using SplitBehavior      = QString::SplitBehavior;
++    static const QString::SplitBehavior SkipEmptyParts = QString::SkipEmptyParts;
++    static const QString::SplitBehavior KeepEmptyParts = QString::KeepEmptyParts;
++} // namespace Qt
++QT_END_NAMESPACE
++
++// operator==(QString, uint) — prevents C++20 reversed-candidate ambiguity.
++inline bool operator==(const QString &lhs, uint rhs) { return lhs == QString::number(rhs); }
++inline bool operator==(uint lhs, const QString &rhs) { return QString::number(lhs) == rhs; }
+ 
+ #endif // QSTRING_H
+diff -ruN qt563-pristine/include/QtCore/qstringlist.h qt563-polyfill/include/QtCore/qstringlist.h
+--- qt563-pristine/include/QtCore/qstringlist.h	2026-06-26 19:42:31
++++ qt563-polyfill/include/QtCore/qstringlist.h	2026-06-26 19:42:30
+@@ -103,6 +103,13 @@
+ #ifdef Q_COMPILER_INITIALIZER_LISTS
+     inline QStringList(std::initializer_list<QString> args) : QList<QString>(args) { }
+ #endif
++// QStringList range constructor (first, last) — not present in Qt 5.6.3
++template<typename InputIterator>
++inline QStringList(InputIterator first, InputIterator last)
++{
++    for (; first != last; ++first)
++        append(*first);
++}
+ 
+     QStringList &operator=(const QList<QString> &other)
+     { QList<QString>::operator=(other); return *this; }
+diff -ruN qt563-pristine/include/QtCore/qstringliteral.h qt563-polyfill/include/QtCore/qstringliteral.h
+--- qt563-pristine/include/QtCore/qstringliteral.h	2026-06-26 19:42:31
++++ qt563-polyfill/include/QtCore/qstringliteral.h	2026-06-26 19:42:30
+@@ -0,0 +1,8 @@
++// Compatibility stub for <QtCore/qstringliteral.h> for Qt 5.6.3 builds.
++// In Qt 5.6.3 QStaticStringData and QStringDataPtr are defined in qstring.h;
++// this stub ensures the sysroot's system Qt qstringliteral.h is never included
++// (which would cause struct redefinition errors).
++#ifndef QSTRINGLITERAL_H
++#define QSTRINGLITERAL_H
++#include "qstring.h"
++#endif // QSTRINGLITERAL_H
+diff -ruN qt563-pristine/include/QtCore/qstringview.h qt563-polyfill/include/QtCore/qstringview.h
+--- qt563-pristine/include/QtCore/qstringview.h	2026-06-26 19:42:31
++++ qt563-polyfill/include/QtCore/qstringview.h	2026-06-26 19:42:30
+@@ -0,0 +1,111 @@
++/****************************************************************************
++** QStringView stub for Qt 5.6.3 builds.
++** Read-only view of a sequence of UTF-16 characters.
++** This minimal implementation covers the usage patterns in this codebase.
++****************************************************************************/
++#ifndef QSTRINGVIEW_H
++#define QSTRINGVIEW_H
++
++#include <QtCore/qstring.h>
++#include <cstring>
++
++QT_BEGIN_NAMESPACE
++
++class Q_CORE_EXPORT QStringView
++{
++    const char16_t* m_data;
++    int m_size;
++
++public:
++    constexpr QStringView() Q_DECL_NOTHROW : m_data(nullptr), m_size(0) {}
++
++    // Constructor from char16_t array literal (e.g. u"hello")
++    template <std::size_t N>
++    constexpr QStringView(const char16_t (&str)[N]) Q_DECL_NOTHROW
++        : m_data(str), m_size(static_cast<int>(N) - 1) {}
++
++    // Constructor from pointer + size
++    constexpr QStringView(const char16_t* str, int size) Q_DECL_NOTHROW
++        : m_data(str), m_size(size) {}
++
++    // Constructor from QString (holds a reference - caller must keep QString alive)
++    inline QStringView(const QString& str) Q_DECL_NOTHROW
++        : m_data(reinterpret_cast<const char16_t*>(str.utf16())), m_size(str.size()) {}
++
++    // Convert to QString
++    inline QString toString() const
++    {
++        if (!m_data || m_size == 0)
++            return QString();
++        return QString::fromUtf16(reinterpret_cast<const ushort*>(m_data), m_size);
++    }
++
++    inline operator QString() const { return toString(); }
++
++    constexpr int size() const Q_DECL_NOTHROW { return m_size; }
++    constexpr int length() const Q_DECL_NOTHROW { return m_size; }
++    constexpr bool isEmpty() const Q_DECL_NOTHROW { return m_size == 0; }
++    constexpr bool isNull() const Q_DECL_NOTHROW { return m_data == nullptr; }
++    constexpr const char16_t* data() const Q_DECL_NOTHROW { return m_data; }
++    constexpr const char16_t* utf16() const Q_DECL_NOTHROW { return m_data; }
++
++    inline bool operator==(const QStringView& other) const Q_DECL_NOTHROW
++    {
++        if (m_size != other.m_size)
++            return false;
++        if (!m_data && !other.m_data)
++            return true;
++        if (!m_data || !other.m_data)
++            return false;
++        return std::memcmp(m_data, other.m_data,
++                           static_cast<std::size_t>(m_size) * sizeof(char16_t)) == 0;
++    }
++
++    inline bool operator!=(const QStringView& other) const Q_DECL_NOTHROW
++    { return !(*this == other); }
++
++    inline bool operator==(const QString& s) const
++    { return toString() == s; }
++
++    inline bool operator==(QLatin1String s) const
++    { return toString() == s; }
++
++    // Additional QStringView methods — not present in Qt 5.6.3
++    inline bool startsWith(const QString& s, Qt::CaseSensitivity cs = Qt::CaseSensitive) const
++    { return toString().startsWith(s, cs); }
++    inline bool startsWith(QChar c, Qt::CaseSensitivity cs = Qt::CaseSensitive) const
++    { return toString().startsWith(c, cs); }
++    inline bool startsWith(QLatin1String s, Qt::CaseSensitivity cs = Qt::CaseSensitive) const
++    { return toString().startsWith(s, cs); }
++    inline bool endsWith(const QString& s, Qt::CaseSensitivity cs = Qt::CaseSensitive) const
++    { return toString().endsWith(s, cs); }
++    inline bool contains(const QString& s, Qt::CaseSensitivity cs = Qt::CaseSensitive) const
++    { return toString().contains(s, cs); }
++    inline QStringView right(int n) const
++    {
++        if (n >= m_size) return *this;
++        return QStringView(m_data + m_size - n, n);
++    }
++    inline QStringView left(int n) const
++    {
++        if (n >= m_size) return *this;
++        return QStringView(m_data, n);
++    }
++    inline QStringView mid(int pos, int n = -1) const
++    {
++        if (pos >= m_size) return QStringView(m_data + m_size, 0);
++        if (n < 0 || pos + n > m_size) n = m_size - pos;
++        return QStringView(m_data + pos, n);
++    }
++};
++
++// Allow QString == QStringView
++inline bool operator==(const QString& a, const QStringView& b)
++{ return a == b.toString(); }
++
++inline bool operator!=(const QString& a, const QStringView& b)
++{ return a != b.toString(); }
++
++QT_END_NAMESPACE
++
++#endif // QSTRINGVIEW_H
+diff -ruN qt563-pristine/include/QtCore/qtextstream.h qt563-polyfill/include/QtCore/qtextstream.h
+--- qt563-pristine/include/QtCore/qtextstream.h	2026-06-26 19:42:31
++++ qt563-polyfill/include/QtCore/qtextstream.h	2026-06-26 19:42:30
+@@ -276,6 +276,26 @@
+     return QTextStreamManipulator(func, precision);
+ }
+ 
++// Qt::endl and related stream functions — not present in Qt 5.6.3.
++#if QT_VERSION < QT_VERSION_CHECK(5, 14, 0)
++namespace Qt {
++    inline QTextStream &endl(QTextStream &stream)
++    {
++        stream << QLatin1Char('\n');
++        stream.flush();
++        return stream;
++    }
++    inline QTextStream &flush(QTextStream &stream) { stream.flush(); return stream; }
++    inline QTextStream &reset(QTextStream &stream) { stream.reset(); return stream; }
++    inline QTextStream &ws(QTextStream &stream) { stream.skipWhiteSpace(); return stream; }
++    // Numeric base stream manipulators — not present in Qt 5.6.3
++    inline QTextStream &bin(QTextStream &stream) { stream.setIntegerBase(2);  return stream; }
++    inline QTextStream &oct(QTextStream &stream) { stream.setIntegerBase(8);  return stream; }
++    inline QTextStream &dec(QTextStream &stream) { stream.setIntegerBase(10); return stream; }
++    inline QTextStream &hex(QTextStream &stream) { stream.setIntegerBase(16); return stream; }
++} // namespace Qt
++#endif
++
+ QT_END_NAMESPACE
+ 
+ #endif // QTEXTSTREAM_H
+diff -ruN qt563-pristine/include/QtCore/qthread.h qt563-polyfill/include/QtCore/qthread.h
+--- qt563-pristine/include/QtCore/qthread.h	2026-06-26 19:42:27
++++ qt563-polyfill/include/QtCore/qthread.h	2026-07-15 08:22:08
+@@ -38,6 +38,9 @@
+ 
+ #include <limits.h>
+ 
++#include <functional>
++#include <utility>
++
+ QT_BEGIN_NAMESPACE
+ 
+ 
+@@ -92,6 +95,13 @@
+     bool event(QEvent *event) Q_DECL_OVERRIDE;
+     int loopLevel() const;
+ 
++    // Polyfill of QThread::create() (added in Qt 5.10). Returns a new QThread
++    // whose run() invokes the supplied callable with the forwarded arguments.
++    // Ownership is transferred to the caller; the thread is created but not
++    // started.
++    template <typename Function, typename... Args>
++    static QThread *create(Function &&f, Args &&... args);
++
+ public Q_SLOTS:
+     void start(Priority = InheritPriority);
+     void terminate();
+@@ -146,6 +156,34 @@
+     Q_DECLARE_PRIVATE(QThread)
+ };
+ 
++#endif // QT_NO_THREAD
++
++#ifndef QT_NO_THREAD
++namespace QtPrivate {
++class QThreadCreateFunctor : public QThread
++{
++public:
++    explicit QThreadCreateFunctor(std::function<void()> fn)
++        : m_functor(std::move(fn)) {}
++
++protected:
++    void run() Q_DECL_OVERRIDE
++    {
++        if (m_functor)
++            m_functor();
++    }
++
++private:
++    std::function<void()> m_functor;
++};
++} // namespace QtPrivate
++
++template <typename Function, typename... Args>
++QThread *QThread::create(Function &&f, Args &&... args)
++{
++    return new QtPrivate::QThreadCreateFunctor(
++        std::bind(std::forward<Function>(f), std::forward<Args>(args)...));
++}
+ #endif // QT_NO_THREAD
+ 
+ QT_END_NAMESPACE
+diff -ruN qt563-pristine/include/QtCore/quuid.h qt563-polyfill/include/QtCore/quuid.h
+--- qt563-pristine/include/QtCore/quuid.h	2026-06-26 19:42:31
++++ qt563-polyfill/include/QtCore/quuid.h	2026-06-26 19:42:29
+@@ -108,6 +108,21 @@
+     QUuid(const QString &);
+     QUuid(const char *);
+     QString toString() const;
++// QUuid::StringFormat enum and toString(StringFormat) overload — not present in Qt 5.6.3
++enum StringFormat {
++    WithBraces      = 0,
++    WithoutBraces   = 1,
++    Id128           = 3,
++};
++inline QString toString(StringFormat mode) const
++{
++    const QString braced = toString();
++    if (mode == WithoutBraces)
++        return braced.mid(1, braced.length() - 2);
++    if (mode == Id128)
++        return braced.mid(1, braced.length() - 2).remove(QLatin1Char('-'));
++    return braced;
++}
+     QUuid(const QByteArray &);
+     QByteArray toByteArray() const;
+     QByteArray toRfc4122() const;
+diff -ruN qt563-pristine/include/QtCore/qvariant.h qt563-polyfill/include/QtCore/qvariant.h
+--- qt563-pristine/include/QtCore/qvariant.h	2026-06-26 19:42:31
++++ qt563-polyfill/include/QtCore/qvariant.h	2026-06-26 19:42:30
+@@ -854,6 +854,10 @@
+ Q_CORE_EXPORT QDebug operator<<(QDebug, const QVariant::Type);
+ #endif
+ 
++// Force full QDate/QTime/QDateTime definitions — qvariant.h only forward-declares them
++// but callers typically need toDate().toString() etc. which require the full class definition.
++#include <QtCore/qdatetime.h>
++
+ QT_END_NAMESPACE
+ 
+ #endif // QVARIANT_H
+diff -ruN qt563-pristine/include/QtGui/qimage.h qt563-polyfill/include/QtGui/qimage.h
+--- qt563-pristine/include/QtGui/qimage.h	2026-06-26 19:42:31
++++ qt563-polyfill/include/QtGui/qimage.h	2026-06-26 19:42:29
+@@ -113,10 +113,12 @@
+         Format_A2RGB30_Premultiplied,
+         Format_Alpha8,
+         Format_Grayscale8,
+-#if 0
+-        // reserved for future use
++        // Image format enum additions — not present in Qt 5.6.3
++        Format_RGBX64,
++        Format_RGBA64,
++        Format_RGBA64_Premultiplied,
+         Format_Grayscale16,
+-#endif
++        Format_BGR888,
+ #ifndef Q_QDOC
+         NImageFormats
+ #endif
+@@ -203,6 +205,8 @@
+     const uchar *constBits() const;
+ 
+     int byteCount() const;
++    // QImage::sizeInBytes() — not present in Qt 5.6.3
++    inline int sizeInBytes() const { return byteCount(); }
+ 
+     uchar *scanLine(int);
+     const uchar *scanLine(int) const;
+diff -ruN qt563-pristine/include/QtGui/qimagereader.h qt563-polyfill/include/QtGui/qimagereader.h
+--- qt563-pristine/include/QtGui/qimagereader.h	2026-06-26 19:42:31
++++ qt563-polyfill/include/QtGui/qimagereader.h	2026-06-26 19:42:29
+@@ -145,4 +145,42 @@
+ 
+ QT_END_NAMESPACE
+ 
++// QImageReaderWithJpegFallback: subclass of QImageReader that adds JPEG SOI-byte detection
++// as a fallback when format() returns empty (occurs when the device has not been
++// explicitly opened before constructing the reader). Callers do not need to
++// call device.open() or change any detection logic in application code.
++class QImageReaderWithJpegFallback : public QImageReader
++{
++public:
++    QImageReaderWithJpegFallback() : QImageReader() {}
++    explicit QImageReaderWithJpegFallback(QIODevice *device, const QByteArray &format = QByteArray())
++        : QImageReader(device, format) {}
++    explicit QImageReaderWithJpegFallback(const QString &fileName, const QByteArray &format = QByteArray())
++        : QImageReader(fileName, format) {}
++
++    QByteArray format() const
++    {
++        QByteArray fmt = QImageReader::format();
++        if (!fmt.isEmpty())
++            return fmt;
++        if (QIODevice *dev = device()) {
++            const bool wasOpen = dev->isOpen();
++            if (!wasOpen)
++                dev->open(QIODevice::ReadOnly);
++            const QByteArray header = dev->peek(3);
++            if (!wasOpen)
++                dev->close();
++            if (header.size() >= 3 &&
++                static_cast<unsigned char>(header[0]) == 0xFF &&
++                static_cast<unsigned char>(header[1]) == 0xD8 &&
++                static_cast<unsigned char>(header[2]) == 0xFF) {
++                return QByteArray("jpeg");
++            }
++        }
++        return fmt;
++    }
++};
++// Make QImageReader name resolve to QImageReaderWithJpegFallback transparently.
++#define QImageReader QImageReaderWithJpegFallback
++
+ #endif // QIMAGEREADER_H
+diff -ruN qt563-pristine/include/QtGui/qopenglextrafunctions.h qt563-polyfill/include/QtGui/qopenglextrafunctions.h
+--- qt563-pristine/include/QtGui/qopenglextrafunctions.h	2026-06-26 19:42:31
++++ qt563-polyfill/include/QtGui/qopenglextrafunctions.h	2026-06-26 19:42:29
+@@ -1983,6 +1983,24 @@
+     Q_OPENGL_FUNCTIONS_DEBUG
+ }
+ 
++// glDrawElementsBaseVertex free function via getProcAddress for OpenGL ES 2 builds.
++#ifdef QT_OPENGL_ES_2
++#ifndef QT563_GLDRAWELEMENTS_BASEVERTEX_POLYFILL
++#define QT563_GLDRAWELEMENTS_BASEVERTEX_POLYFILL
++inline void glDrawElementsBaseVertex(GLenum mode, GLsizei count, GLenum type,
++                                      const void *indices, GLint basevertex)
++{
++    typedef void (*FnType)(GLenum, GLsizei, GLenum, const void *, GLint);
++    static FnType fn = nullptr;
++    if (!fn)
++        fn = reinterpret_cast<FnType>(
++            QOpenGLContext::currentContext()->getProcAddress("glDrawElementsBaseVertex"));
++    Q_ASSERT(fn);
++    fn(mode, count, type, indices, basevertex);
++}
++#endif // QT563_GLDRAWELEMENTS_BASEVERTEX_POLYFILL
++#endif // QT_OPENGL_ES_2
++
+ QT_END_NAMESPACE
+ 
+ #endif // QT_NO_OPENGL
+File qt563-pristine/include/QtGui/qpa is a unknown type while file qt563-polyfill/include/QtGui/qpa is a unknown type
+diff -ruN qt563-pristine/include/QtGui/qwindow.h qt563-polyfill/include/QtGui/qwindow.h
+--- qt563-pristine/include/QtGui/qwindow.h	2026-06-26 19:42:31
++++ qt563-polyfill/include/QtGui/qwindow.h	2026-06-26 19:42:29
+@@ -155,6 +155,10 @@
+     QSurfaceFormat requestedFormat() const;
+ 
+     void setFlags(Qt::WindowFlags flags);
++// QWindow::setFlag() — not present in Qt 5.6.3
++inline void setFlag(Qt::WindowType flag, bool on = true) {
++    setFlags(on ? (flags() | flag) : (flags() & ~Qt::WindowFlags(flag)));
++}
+     Qt::WindowFlags flags() const;
+     Qt::WindowType type() const;
+ 
+diff -ruN qt563-pristine/include/QtNetwork/qnetworkrequest.h qt563-polyfill/include/QtNetwork/qnetworkrequest.h
+--- qt563-pristine/include/QtNetwork/qnetworkrequest.h	2026-06-26 19:42:31
++++ qt563-polyfill/include/QtNetwork/qnetworkrequest.h	2026-06-26 19:42:29
+@@ -82,6 +82,10 @@
+         SpdyWasUsedAttribute,
+         EmitAllUploadProgressSignalsAttribute,
+         FollowRedirectsAttribute,
++// QNetworkRequest attribute aliases and additions — not present in Qt 5.6.3
++Http2AllowedAttribute = SpdyAllowedAttribute,
++Http2WasUsedAttribute = SpdyWasUsedAttribute,
++RedirectPolicyAttribute,
+ 
+         User = 1000,
+         UserMax = 32767
+@@ -96,6 +100,14 @@
+         Automatic = 0,
+         Manual
+     };
++
++// QNetworkRequest::RedirectPolicy — not present in Qt 5.6.3
++enum RedirectPolicy {
++    ManualRedirectPolicy,
++    NoLessSafeRedirectPolicy,
++    SameOriginRedirectPolicy,
++    UserVerifiedRedirectPolicy
++};
+ 
+     enum Priority {
+         HighPriority = 1,
+diff -ruN qt563-pristine/include/QtNetwork/qssl.h qt563-polyfill/include/QtNetwork/qssl.h
+--- qt563-pristine/include/QtNetwork/qssl.h	2026-06-26 19:42:31
++++ qt563-polyfill/include/QtNetwork/qssl.h	2026-06-26 19:42:29
+@@ -56,7 +56,8 @@
+         Opaque,
+         Rsa,
+         Dsa,
+-        Ec
++        Ec,
++        Dh
+     };
+ 
+     enum AlternativeNameEntryType {
+diff -ruN qt563-pristine/include/QtNetwork/qsslcertificate.h qt563-polyfill/include/QtNetwork/qsslcertificate.h
+--- qt563-pristine/include/QtNetwork/qsslcertificate.h	2026-06-26 19:42:31
++++ qt563-polyfill/include/QtNetwork/qsslcertificate.h	2026-06-26 19:42:28
+@@ -78,7 +78,10 @@
+         SerialNumber,
+         EmailAddress
+     };
++// QSslCertificate::PatternSyntax typedef — not present in Qt 5.6.3
++typedef QRegExp::PatternSyntax PatternSyntax;
+ 
++
+     explicit QSslCertificate(QIODevice *device, QSsl::EncodingFormat format = QSsl::Pem);
+     explicit QSslCertificate(const QByteArray &data = QByteArray(), QSsl::EncodingFormat format = QSsl::Pem);
+     QSslCertificate(const QSslCertificate &other);
+@@ -117,6 +120,14 @@
+     QStringList subjectInfo(const QByteArray &attribute) const;
+     QList<QByteArray> subjectInfoAttributes() const;
+     QList<QByteArray> issuerInfoAttributes() const;
++    // QSslCertificate::subjectDisplayName() — not present in Qt 5.6.3
++    inline QString subjectDisplayName() const {
++        const QStringList cn = subjectInfo(CommonName);
++        if (!cn.isEmpty()) return cn.first();
++        const QStringList o = subjectInfo(Organization);
++        if (!o.isEmpty()) return o.first();
++        return QString();
++    }
+ #if QT_DEPRECATED_SINCE(5,0)
+     QT_DEPRECATED inline QMultiMap<QSsl::AlternateNameEntryType, QString>
+                   alternateSubjectNames() const { return subjectAlternativeNames(); }
+diff -ruN qt563-pristine/include/QtTest/qtestcase.h qt563-polyfill/include/QtTest/qtestcase.h
+--- qt563-pristine/include/QtTest/qtestcase.h	2026-06-26 19:42:31
++++ qt563-polyfill/include/QtTest/qtestcase.h	2026-06-26 19:42:30
+@@ -43,6 +43,9 @@
+ #include <QtCore/qtypetraits.h>
+ #include <QtCore/qsharedpointer.h>
+ #include <QtCore/qtemporarydir.h>
++#include <QtCore/qcoreapplication.h>
++#include <cstdio>
++#include <cstdarg>
+ 
+ #include <string.h>
+ 
+@@ -57,7 +60,7 @@
+ 
+ #define QVERIFY(statement) \
+ do {\
+-    if (!QTest::qVerify((statement), #statement, "", __FILE__, __LINE__))\
++    if (!QTest::qVerify(static_cast<bool>(statement), #statement, "", __FILE__, __LINE__))\
+         return;\
+ } while (0)
+ 
+@@ -69,7 +72,7 @@
+ 
+ #define QVERIFY2(statement, description) \
+ do {\
+-    if (statement) {\
++    if (static_cast<bool>(statement)) {\
+         if (!QTest::qVerify(true, #statement, (description), __FILE__, __LINE__))\
+             return;\
+     } else {\
+@@ -152,7 +155,7 @@
+ // Will try to wait for the expression to become true while allowing event processing
+ #define QTRY_VERIFY_WITH_TIMEOUT(expr, timeout) \
+ do { \
+-    QTRY_IMPL((expr), timeout);\
++    QTRY_IMPL(static_cast<bool>(expr), timeout);\
+     QVERIFY(expr); \
+ } while (0)
+ 
+@@ -198,11 +201,14 @@
+         return;\
+ } while (0)
+ 
++// QTestRemoveConst: allows cv-qualified types in QFETCH to avoid metatype lookup failure.
++template <typename T> struct QTestRemoveConst { typedef T Type; };
++template <typename T> struct QTestRemoveConst<const T> { typedef T Type; };
+ #define QFETCH(type, name)\
+-    type name = *static_cast<type *>(QTest::qData(#name, ::qMetaTypeId<type >()))
++    type name = *static_cast<type *>(QTest::qData(#name, ::qMetaTypeId<typename QTestRemoveConst<type>::Type>()))
+ 
+ #define QFETCH_GLOBAL(type, name)\
+-    type name = *static_cast<type *>(QTest::qGlobalData(#name, ::qMetaTypeId<type >()))
++    type name = *static_cast<type *>(QTest::qGlobalData(#name, ::qMetaTypeId<typename QTestRemoveConst<type>::Type>()))
+ 
+ #define QTEST(actual, testElement)\
+ do {\
+@@ -301,6 +307,24 @@
+                                          const char *actual, const char *expected,
+                                          const char *file, int line);
+     Q_TESTLIB_EXPORT void qSleep(int ms);
++
++    // QTest::qWaitFor(predicate, timeout) — not present in Qt 5.6.3
++    // Uses qSleep + processEvents to avoid a forward-declaration dependency on qtestsystem.h.
++    template <typename Functor>
++    static bool qWaitFor(Functor predicate, int timeout = 5000)
++    {
++        const int step = 50;
++        int elapsed = 0;
++        do {
++            if (predicate())
++                return true;
++            QTest::qSleep(step);
++            QCoreApplication::processEvents();
++            elapsed += step;
++        } while (elapsed < timeout);
++        return predicate();
++    }
++
+     Q_TESTLIB_EXPORT void addColumnInternal(int id, const char *name);
+ 
+     template <typename T>
+@@ -312,6 +336,17 @@
+     }
+     Q_TESTLIB_EXPORT QTestData &newRow(const char *dataTag);
+ 
++    // QTest::addRow(fmt, ...) printf-style row naming — not present in Qt 5.6.3
++    static inline QTestData &addRow(const char *format, ...)
++    {
++        va_list args;
++        va_start(args, format);
++        char buf[256];
++        std::vsnprintf(buf, sizeof(buf), format, args);
++        va_end(args);
++        return newRow(buf);
++    }
++
+     template <typename T>
+     inline bool qCompare(T const &t1, T const &t2, const char *actual, const char *expected,
+                         const char *file, int line)
+@@ -354,8 +389,14 @@
+     QTEST_COMPARE_DECL(bool)
+ #endif
+ 
++    // Cross-type qCompare for QCOMPARE(T1, T2) where T1 != T2 — not present in Qt 5.6.3
+     template <typename T1, typename T2>
+-    bool qCompare(T1 const &, T2 const &, const char *, const char *, const char *, int);
++    inline bool qCompare(T1 const &t1, T2 const &t2, const char *actual, const char *expected,
++                         const char *file, int line)
++    {
++        return compare_helper(t1 == t2, "Compared values are not the same",
++                              toString(t1), toString(t2), actual, expected, file, line);
++    }
+ 
+     inline bool qCompare(double const &t1, float const &t2, const char *actual,
+                                  const char *expected, const char *file, int line)
+File qt563-pristine/include/qpa is a unknown type while file qt563-polyfill/include/qpa is a unknown type

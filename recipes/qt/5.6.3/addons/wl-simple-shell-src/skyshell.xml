@@ -1,0 +1,193 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<protocol name="skyq_shell">
+
+    <copyright>
+        Copyright © 2019 Sky UK. All rights reserved.
+    </copyright>
+
+    <interface name="skyq_shell" version="4">
+        <description summary="create skyq surfaces">
+            The skyq_shell interface is exposed as a global object enabling
+            clients to turn their wl_surfaces into skyq_surfaces for controlling
+            how they are displayed.
+
+            In addition the skyq_shell interface generates events to signal
+            state change of the client, for example if it has lost input focus
+            or has been requested to go into suspend mode.
+        </description>
+
+
+        <enum name="skyq_surface_flags" bitfield="true">
+            <description summary="flags to set when getting the skyq surface">
+                These flags are used to inform how the skyq_surface is expected
+                to be used.
+            </description>
+            <entry name="overlay" value="1">
+                <description summary="create the surface as an overlay">
+                    Overlay surfaces are displayed at the top of the z-order
+                    above all running applications. By default when displayed
+                    they automatically grab the input focus and the focus is
+                    only returned to the running app once the surface is hidden
+                    or destroyed.  This can be changed by setting the
+                    transparent_to_input flag.
+
+                    Setting this flag can only be set / cleared while the
+                    surface is not visible.
+
+                    Creating an overlay surface is a privileged operation
+                    and the window manager may decide to block the request if
+                    the calling app lacks the correct permissions.
+                </description>
+            </entry>
+            <entry name="transparent_for_input" value="2">
+                <description summary="makes the surface transparent for input">
+                    Setting this flag means the surface will never receive
+                    input events.
+
+                    This flag can only be combined with the overlay flag, and
+                    is typically used to display short transient popup
+                    surfaces.
+
+                    The flag can be set when the surface is visible or hidden.
+
+                </description>
+            </entry>
+        </enum>
+
+        <!--
+                <request name="show_notification">
+                    <description summary="raises a surface as a notification">
+                        Raises (possibly animates) a surface onto the screen. The notification surface will
+                        gain the input focus and the current application running will be informed that it
+                        has lost focus.
+                    </description>
+                    <arg name="surfaceId" type="uint"/>
+                </request>
+                <request name="hide_notification">
+                    <description summary="hides a surface raised as a notification">
+                        Removes (possibly animates) the notification window off of the screen. The current application,
+                        that is the application behind the notification (note - this could change as applications
+                        can be opened/closed behind the notification) is given the focus
+                    </description>
+                    <arg name="surfaceId" type="uint"/>
+                </request>
+
+
+                <request name="show_popup">
+                    <description summary="raises a surface as a notification">
+                        Raises (possibly animates) a surface onto the screen. The notification surface will
+                        gain the input focus and the current application running will be informed that it
+                        has lost focus.
+                    </description>
+                    <arg name="surfaceId" type="uint"/>
+                </request>
+                <request name="hide_popup">
+                    <description summary="hides a surface raised as a notification">
+                        Removes (possibly animates) the notification window off of the screen. The current application,
+                        that is the application behind the notification (note - this could change as applications
+                        can be opened/closed behind the notification) is given the focus
+                    </description>
+                    <arg name="surfaceId" type="uint"/>
+                </request>
+        -->
+
+        <request name="set_surface_flags" since="2">
+            <description summary="hides a surface raised as a notification">
+                Sets the flags on a simple-shell surface.  This is used to mark surfaces as Popup or Notification
+                types, which the window manager will handle differently when made visible.
+                It is not possible to change the surface flags once a buffer has been drawn.
+            </description>
+            <arg name="surfaceId" type="uint" summary="surface id value returned by the wl-simple-shell interface"/>
+            <arg name="flags" type="uint" summary="bit mask of surface flags"/>
+        </request>
+
+        <enum name="error">
+            <entry name="forbidden" value="0"
+                   summary="tried to set notification or popup flag without capability"/>
+        </enum>
+
+
+        <enum name="state">
+            <description summary="possible app states">
+                All apps are in one of these states...
+            </description>
+            <entry name="active" value="0"
+                   summary="the app is active one on screen"/>
+            <entry name="inactive" value="1"
+                   summary="the app is visible but input focus is currently with another app (ie. notification overlay shown)"/>
+            <entry name="hidden" value="2"
+                   summary="the app is not visible and not active"/>
+            <entry name="suspended" value="3"
+                   summary="the app has been suspended and should save settings and tear down gfx etc"/>
+            <entry name="hibernated" value="4" since="4"
+                   summary="the app is hibernated or entering hibernating state"/>
+        </enum>
+
+        <event name="state_changed">
+            <description summary="the state of the app has changed">
+                This is a notification that the state of the app has changed
+                from the POV of the window manager.  It is up to the app to
+                act on the state change ...
+
+            </description>
+            <arg name="state" type="uint" enum="state"
+                 summary="the state of the app"/>
+        </event>
+
+        <event name="close">
+            <description summary="request for the app to shut down">
+                In response to this event the application is expected to clean
+                up and shutdown.  Once this event is sent the app will no longer
+                by able to display anything on screen and won't receive any
+                key presses.
+            </description>
+        </event>
+
+
+        <enum name="visibility_policy">
+            <description summary="possible visibility policy">
+
+            </description>
+            <entry name="visible_by_default" value="0"
+                   summary="surfaces are automatically visible when created"/>
+            <entry name="hidden_by_default" value="1"
+                   summary="surfaces are hidden when created."/>
+        </enum>
+
+        <request name="set_visibility_policy" since="2">
+            <description summary="sets the default visibility policy for surfaces">
+                Westeros sets all surfaces to visible when they are created, this
+                clashes with some windowing code (Qt) which expects surfaces to
+                initially be invisible.  This in turn can cause some artifacts
+                when the surface / window is first created.
+                This API allows you to change the default policy so the westeros
+                behavior is matched to the windowing code.
+                The policy can be changed dynamically and applies to any surfaces
+                created after the call.
+            </description>
+            <arg name="policy" type="uint" enum="visibility_policy" summary="the policy to set"/>
+        </request>
+
+        <request name="set_suspended" since="3">
+            <description summary="signals the window manager that the app has suspended itself">
+                This should be called by the app after it has received a state
+                notification to suspend - and it has actually suspended. However
+                it can also be called out of the blue, if for example in the
+                Netflix case where you can exist the app via a menu, which will
+                cause it to suspend rather than shutdown.
+            </description>
+        </request>
+
+        <request name="set_hibernate_ready" since="4">
+            <description summary="signals the window manager that the app is ready to be hibernated">
+                If an app supports hibernation it should call this when in the
+                suspended state, and it is safe to now hibernate.  The system
+                may then at some point later move the apps state to hibernated
+                and freeze / hibernate the app.
+            </description>
+        </request>
+
+    </interface>
+
+
+</protocol>

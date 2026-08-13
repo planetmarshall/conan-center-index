@@ -1,0 +1,37 @@
+# Build Qt 5.6.3 (opensource) as a Conan binary package for native Linux
+# x86_64.  Reuses the existing entos-linux-x86_64 platform profile and adds the
+# Qt build options that mirror
+#   core-app/scripts/setup_and_build_linux_x86_qt563.sh
+# The produced package is later consumed by epg (qt_from_conan=True) instead of
+# a from-source local_sdk install.
+include(entos-linux-x86_64)
+
+[options]
+qt/*:shared=True
+qt/*:commercial=False
+qt/*:opengl=desktop
+qt/*:gui=True
+qt/*:widgets=True
+# qtdeclarative provides Qml/Quick, required by epg.
+qt/*:qtdeclarative=True
+qt/*:with_vulkan=False
+qt/*:with_glib=False
+qt/*:with_dbus=False
+# Headless desktop SDK skips qtwayland (-skip qtwayland in
+# setup_and_build_linux_x86_qt563.sh). Qt 5.6.3 has no Qt5WaylandCompositor
+# module (added in 5.8); keep this off to match the consumer profile and avoid
+# CMakeConfigDeps failing to locate the nonexistent library.
+qt/*:qtwayland=False
+# Additional modules to match the local_sdk linux-desktop-x86_64-qt563 SDK.
+qt/*:qtsvg=True
+qt/*:qtimageformats=True
+qt/*:qtgraphicaleffects=True
+qt/*:qtxmlpatterns=True
+qt/*:qtwebsockets=True
+qt/*:qtwebchannel=True
+# freetype is bundled by Qt 5.6.3 (with_freetype option removed in the recipe),
+# so fontconfig (which needs freetype) must stay off.
+qt/*:with_fontconfig=False
+# Match setup_and_build_linux_x86_qt563.sh: -no-xcb (offscreen/EGL, no X11).
+qt/*:with_x11=False
+qt/*:with_icu=False

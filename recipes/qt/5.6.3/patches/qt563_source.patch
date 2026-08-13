@@ -1,0 +1,3172 @@
+diff -ruN qt-src-pristine/qtbase/config.tests/unix/arch.test qt-src-patched/qtbase/config.tests/unix/arch.test
+--- qt-src-pristine/qtbase/config.tests/unix/arch.test	2017-09-06 13:13:54
++++ qt-src-patched/qtbase/config.tests/unix/arch.test	2026-08-10 13:38:23
+@@ -62,7 +62,7 @@
+ fi
+ 
+ if strings - $binary 2>/dev/null | \
+-    awk -F: '/\=\=Qt\=magic\=Qt\=\= Architecture/ { print "'$VARPREFIX'_ARCH=\"" $2 "\"" }
++    LC_ALL=C awk -F: '/\=\=Qt\=magic\=Qt\=\= Architecture/ { print "'$VARPREFIX'_ARCH=\"" $2 "\"" }
+              /\=\=Qt\=magic\=Qt\=\= Sub-architecture/ { print "'$VARPREFIX'_CPUFEATURES=\"" $2 "\"" }' > "$RESULTFILE"
+ then
+     [ "$VERBOSE" = "yes" ] && echo "    Found architecture in binary" && \
+diff -ruN qt-src-pristine/qtbase/config.tests/unix/opengldesktop/opengldesktop.cpp qt-src-patched/qtbase/config.tests/unix/opengldesktop/opengldesktop.cpp
+--- qt-src-pristine/qtbase/config.tests/unix/opengldesktop/opengldesktop.cpp	2017-09-06 13:13:54
++++ qt-src-patched/qtbase/config.tests/unix/opengldesktop/opengldesktop.cpp	2026-08-10 13:38:23
+@@ -32,6 +32,7 @@
+ ****************************************************************************/
+ 
+ #ifdef __APPLE__
++#define GL_SILENCE_DEPRECATION
+ #include <OpenGL/gl.h>
+ #else
+ #define GL_GLEXT_PROTOTYPES
+diff -ruN qt-src-pristine/qtbase/configure qt-src-patched/qtbase/configure
+--- qt-src-pristine/qtbase/configure	2017-09-06 13:13:54
++++ qt-src-patched/qtbase/configure	2026-08-10 13:38:23
+@@ -292,7 +292,7 @@
+ 
+     sdk=$(getSingleQMakeVariable "QMAKE_MAC_SDK" "$1")
+     if [ -z "$sdk" ]; then echo "QMAKE_MAC_SDK must be set when building on Mac" >&2; exit 1; fi
+-    sysroot=$(/usr/bin/xcodebuild -sdk $sdk -version Path 2>/dev/null)
++    sysroot=$(xcrun --sdk $sdk --show-sdk-path 2>/dev/null)
+     if [ -z "$sysroot" ]; then echo "Failed to resolve SDK path for '$sdk'" >&2; exit 1; fi
+ 
+     case "$sdk" in
+@@ -543,13 +543,8 @@
+         exit 2
+     fi
+ 
+-    if ! /usr/bin/xcrun -find xcodebuild >/dev/null 2>&1; then
+-        echo >&2
+-        echo "   Xcode not set up properly. You may need to confirm the license" >&2
+-        echo "   agreement by running /usr/bin/xcodebuild without arguments." >&2
+-        echo >&2
+-        exit 2
+-    fi
++    # xcrun -find xcodebuild check removed: CLT-only builds do not have xcodebuild
++    # but are fully capable of building Qt. xcrun --show-sdk-path is used instead.
+ fi
+ 
+ #-----------------------------------------------------------------------------
+diff -ruN qt-src-pristine/qtbase/mkspecs/common/mac.conf qt-src-patched/qtbase/mkspecs/common/mac.conf
+--- qt-src-pristine/qtbase/mkspecs/common/mac.conf	2017-09-06 13:13:54
++++ qt-src-patched/qtbase/mkspecs/common/mac.conf	2026-08-10 13:38:23
+@@ -14,8 +14,7 @@
+ 
+ # sdk.prf will prefix the proper SDK sysroot
+ QMAKE_INCDIR_OPENGL     = \
+-    /System/Library/Frameworks/OpenGL.framework/Headers \
+-    /System/Library/Frameworks/AGL.framework/Headers/
++    /System/Library/Frameworks/OpenGL.framework/Headers
+ 
+ QMAKE_FIX_RPATH         = install_name_tool -id
+ 
+@@ -26,7 +25,7 @@
+ QMAKE_REL_RPATH_BASE    = @loader_path
+ 
+ QMAKE_LIBS_DYNLOAD      =
+-QMAKE_LIBS_OPENGL       = -framework OpenGL -framework AGL
++QMAKE_LIBS_OPENGL       = -framework OpenGL
+ QMAKE_LIBS_THREAD       =
+ 
+ QMAKE_ACTOOL            = actool
+diff -ruN qt-src-pristine/qtbase/mkspecs/features/mac/default_pre.prf qt-src-patched/qtbase/mkspecs/features/mac/default_pre.prf
+--- qt-src-pristine/qtbase/mkspecs/features/mac/default_pre.prf	2017-09-06 13:13:54
++++ qt-src-patched/qtbase/mkspecs/features/mac/default_pre.prf	2026-08-10 13:38:23
+@@ -1,6 +1,13 @@
+ CONFIG = asset_catalogs sdk rez $$CONFIG
+ load(default_pre)
+ 
++# Cross-compile on Linux via OSXCross: skip Xcode detection when OSXCROSS_SDK is set.
++_OSXCROSS_SDK = $$getenv(OSXCROSS_SDK)
++!isEmpty(_OSXCROSS_SDK) {
++    isEmpty(QMAKE_XCODE_DEVELOPER_PATH): QMAKE_XCODE_DEVELOPER_PATH = $$_OSXCROSS_SDK
++    isEmpty(QMAKE_XCODE_VERSION): QMAKE_XCODE_VERSION = 15.5
++}
++
+ isEmpty(QMAKE_XCODE_DEVELOPER_PATH) {
+     # Get path of Xcode's Developer directory
+     QMAKE_XCODE_DEVELOPER_PATH = $$system("/usr/bin/xcode-select --print-path 2>/dev/null")
+@@ -11,16 +18,22 @@
+     !exists($$QMAKE_XCODE_DEVELOPER_PATH): \
+         error("Xcode is not installed in $${QMAKE_XCODE_DEVELOPER_PATH}. Please use xcode-select to choose Xcode installation path.")
+ 
+-    # Make sure Xcode is set up properly
+-    isEmpty($$list($$system("/usr/bin/xcrun -find xcodebuild 2>/dev/null"))): \
++    # Make sure Xcode is set up properly.
++    # With Command Line Tools only (no Xcode.app), xcrun -find xcodebuild prints to
++    # stderr and produces no stdout, so capture stderr too and only error when the
++    # developer path does not contain "CommandLineTools".
++    _xcrun_xcodebuild = $$system("/usr/bin/xcrun -find xcodebuild 2>&1")
++    isEmpty(_xcrun_xcodebuild): !contains(QMAKE_XCODE_DEVELOPER_PATH, CommandLineTools): \
+         error("Xcode not set up properly. You may need to confirm the license agreement by running /usr/bin/xcodebuild.")
++    unset(_xcrun_xcodebuild)
+ }
+ 
+ isEmpty(QMAKE_XCODE_VERSION) {
+-    # Extract Xcode version using xcodebuild
+-    xcode_version = $$system("/usr/bin/xcodebuild -version")
++    # Extract Xcode version using xcodebuild; fall back for Command Line Tools only installs
++    xcode_version = $$system("/usr/bin/xcodebuild -version 2>/dev/null")
+     QMAKE_XCODE_VERSION = $$member(xcode_version, 1)
+-    isEmpty(QMAKE_XCODE_VERSION): error("Could not resolve Xcode version.")
++    # xcodebuild not available with CLT only — use placeholder version
++    isEmpty(QMAKE_XCODE_VERSION): QMAKE_XCODE_VERSION = 0.0
+     unset(xcode_version)
+ }
+ 
+diff -ruN qt-src-pristine/qtbase/mkspecs/features/mac/sdk.prf qt-src-patched/qtbase/mkspecs/features/mac/sdk.prf
+--- qt-src-pristine/qtbase/mkspecs/features/mac/sdk.prf	2017-09-06 13:13:54
++++ qt-src-patched/qtbase/mkspecs/features/mac/sdk.prf	2026-08-10 13:38:23
+@@ -6,7 +6,9 @@
+     error("QMAKE_MAC_SDK can only contain short-form SDK names (eg. macosx, iphoneos)")
+ 
+ isEmpty(QMAKE_MAC_SDK.$${QMAKE_MAC_SDK}.path) {
+-    QMAKE_MAC_SDK_PATH = $$system("/usr/bin/xcodebuild -sdk $$QMAKE_MAC_SDK -version Path 2>/dev/null")
++    QMAKE_MAC_SDK_PATH = $$system("/usr/bin/xcrun --sdk $$QMAKE_MAC_SDK --show-sdk-path 2>/dev/null")
++    # Cross-compile fallback: use OSXCROSS_SDK env var when xcodebuild is unavailable (Linux/OSXCross)
++    isEmpty(QMAKE_MAC_SDK_PATH): QMAKE_MAC_SDK_PATH = $$getenv(OSXCROSS_SDK)
+     isEmpty(QMAKE_MAC_SDK_PATH): error("Could not resolve SDK path for \'$$QMAKE_MAC_SDK\'")
+     cache(QMAKE_MAC_SDK.$${QMAKE_MAC_SDK}.path, set stash, QMAKE_MAC_SDK_PATH)
+ } else {
+@@ -14,16 +16,19 @@
+ }
+ 
+ isEmpty(QMAKE_MAC_SDK.$${QMAKE_MAC_SDK}.platform_path) {
+-    QMAKE_MAC_SDK_PLATFORM_PATH = $$system("/usr/bin/xcodebuild -sdk $$QMAKE_MAC_SDK -version PlatformPath 2>/dev/null")
+-    isEmpty(QMAKE_MAC_SDK_PLATFORM_PATH): error("Could not resolve SDK platform path for \'$$QMAKE_MAC_SDK\'")
++    QMAKE_MAC_SDK_PLATFORM_PATH = $$system("/usr/bin/xcrun --sdk $$QMAKE_MAC_SDK --show-sdk-platform-path 2>/dev/null")
++    # Cross-compile fallback: use SDK path itself as platform path
++    isEmpty(QMAKE_MAC_SDK_PLATFORM_PATH): QMAKE_MAC_SDK_PLATFORM_PATH = $$QMAKE_MAC_SDK_PATH
+     cache(QMAKE_MAC_SDK.$${QMAKE_MAC_SDK}.platform_path, set stash, QMAKE_MAC_SDK_PLATFORM_PATH)
+ } else {
+     QMAKE_MAC_SDK_PLATFORM_PATH = $$eval(QMAKE_MAC_SDK.$${QMAKE_MAC_SDK}.platform_path)
+ }
+ 
+ isEmpty(QMAKE_MAC_SDK.$${QMAKE_MAC_SDK}.version) {
+-    QMAKE_MAC_SDK_VERSION = $$system("/usr/bin/xcodebuild -sdk $$QMAKE_MAC_SDK -version SDKVersion 2>/dev/null")
+-    isEmpty(QMAKE_MAC_SDK_VERSION): error("Could not resolve SDK version for \'$$QMAKE_MAC_SDK\'")
++    QMAKE_MAC_SDK_VERSION = $$system("/usr/bin/xcrun --sdk $$QMAKE_MAC_SDK --show-sdk-version 2>/dev/null")
++    # Cross-compile fallback: read OSXCROSS_SDK_VERSION env var
++    isEmpty(QMAKE_MAC_SDK_VERSION): QMAKE_MAC_SDK_VERSION = $$getenv(OSXCROSS_SDK_VERSION)
++    isEmpty(QMAKE_MAC_SDK_VERSION): QMAKE_MAC_SDK_VERSION = 0
+     cache(QMAKE_MAC_SDK.$${QMAKE_MAC_SDK}.version, set stash, QMAKE_MAC_SDK_VERSION)
+ } else {
+     QMAKE_MAC_SDK_VERSION = $$eval(QMAKE_MAC_SDK.$${QMAKE_MAC_SDK}.version)
+@@ -61,7 +66,8 @@
+ 
+ isEmpty(QMAKE_MAC_SDK.$${QMAKE_MAC_SDK}.platform_name) {
+     QMAKE_MAC_PLATFORM_NAME = $$system("/usr/libexec/PlistBuddy -c 'print DefaultProperties:PLATFORM_NAME' $$QMAKE_MAC_SDK_PATH/SDKSettings.plist 2>/dev/null")
+-    isEmpty(QMAKE_MAC_PLATFORM_NAME): error("Could not resolve platform name for SDK '$$QMAKE_MAC_SDK'")
++    # Cross-compile fallback: assume macosx for macOS cross-compile (Linux/OSXCross)
++    isEmpty(QMAKE_MAC_PLATFORM_NAME): QMAKE_MAC_PLATFORM_NAME = macosx
+     cache(QMAKE_MAC_SDK.$${QMAKE_MAC_SDK}.platform_name, set stash, QMAKE_MAC_PLATFORM_NAME)
+ } else {
+     QMAKE_MAC_PLATFORM_NAME = $$eval(QMAKE_MAC_SDK.$${QMAKE_MAC_SDK}.platform_name)
+diff -ruN qt-src-pristine/qtbase/src/3rdparty/libpng/pngpriv.h qt-src-patched/qtbase/src/3rdparty/libpng/pngpriv.h
+--- qt-src-pristine/qtbase/src/3rdparty/libpng/pngpriv.h	2017-09-06 13:13:54
++++ qt-src-patched/qtbase/src/3rdparty/libpng/pngpriv.h	2026-08-10 13:38:23
+@@ -430,7 +430,7 @@
+ #  include <float.h>
+ 
+ #  if (defined(__MWERKS__) && defined(macintosh)) || defined(applec) || \
+-    defined(THINK_C) || defined(__SC__) || defined(TARGET_OS_MAC)
++    defined(THINK_C) || defined(__SC__) || (defined(TARGET_OS_MAC) && !defined(__APPLE_CC__))
+      /* We need to check that <math.h> hasn't already been included earlier
+       * as it seems it doesn't agree with <fp.h>, yet we should really use
+       * <fp.h> if possible.
+diff -ruN qt-src-pristine/qtbase/src/corelib/global/qflags.h qt-src-patched/qtbase/src/corelib/global/qflags.h
+--- qt-src-pristine/qtbase/src/corelib/global/qflags.h	2017-09-06 13:13:54
++++ qt-src-patched/qtbase/src/corelib/global/qflags.h	2026-08-10 13:38:23
+@@ -156,13 +156,13 @@
+ typedef QFlags<Enum> Flags;
+ 
+ #define Q_DECLARE_INCOMPATIBLE_FLAGS(Flags) \
+-Q_DECL_CONSTEXPR inline QIncompatibleFlag operator|(Flags::enum_type f1, int f2) Q_DECL_NOTHROW \
++inline QIncompatibleFlag operator|(Flags::enum_type f1, int f2) Q_DECL_NOTHROW \
+ { return QIncompatibleFlag(int(f1) | f2); }
+ 
+ #define Q_DECLARE_OPERATORS_FOR_FLAGS(Flags) \
+-Q_DECL_CONSTEXPR inline QFlags<Flags::enum_type> operator|(Flags::enum_type f1, Flags::enum_type f2) Q_DECL_NOTHROW \
++inline QFlags<Flags::enum_type> operator|(Flags::enum_type f1, Flags::enum_type f2) Q_DECL_NOTHROW \
+ { return QFlags<Flags::enum_type>(f1) | f2; } \
+-Q_DECL_CONSTEXPR inline QFlags<Flags::enum_type> operator|(Flags::enum_type f1, QFlags<Flags::enum_type> f2) Q_DECL_NOTHROW \
++inline QFlags<Flags::enum_type> operator|(Flags::enum_type f1, QFlags<Flags::enum_type> f2) Q_DECL_NOTHROW \
+ { return f2 | f1; } Q_DECLARE_INCOMPATIBLE_FLAGS(Flags)
+ 
+ 
+diff -ruN qt-src-pristine/qtbase/src/corelib/global/qtypetraits.h qt-src-patched/qtbase/src/corelib/global/qtypetraits.h
+--- qt-src-pristine/qtbase/src/corelib/global/qtypetraits.h	2017-09-06 13:13:54
++++ qt-src-patched/qtbase/src/corelib/global/qtypetraits.h	2026-08-10 13:38:23
+@@ -473,9 +473,26 @@
+     : integral_constant<bool, !B> {};
+ 
+ // Checks whether a type is unsigned (T must be convertible to unsigned int):
++// Clang 17+: T(0) < T(-1) is not a constant expression for enum types in C++17.
++// Use __is_enum / __underlying_type compiler builtins (no <type_traits> needed).
++// GCC does not have this problem so the original expression is kept for non-Clang.
++#if defined(__clang__)
++namespace detail {
++template <typename T, bool IsEnum = __is_enum(T)>
++struct is_unsigned_impl
++    : integral_constant<bool, (T(0) < T(-1))> {};
+ template <typename T>
++struct is_unsigned_impl<T, true>
++    : integral_constant<bool,
++        ( (__underlying_type(T))(-1) > (__underlying_type(T))(0) )> {};
++} // namespace detail
++template <typename T>
++struct is_unsigned : detail::is_unsigned_impl<T> {};
++#else
++template <typename T>
+ struct is_unsigned
+     : integral_constant<bool, (T(0) < T(-1))> {};
++#endif
+ 
+ // Checks whether a type is signed (T must be convertible to int):
+ template <typename T>
+diff -ruN qt-src-pristine/qtbase/src/corelib/io/qdataurl.cpp qt-src-patched/qtbase/src/corelib/io/qdataurl.cpp
+--- qt-src-pristine/qtbase/src/corelib/io/qdataurl.cpp	2017-09-06 13:13:54
++++ qt-src-patched/qtbase/src/corelib/io/qdataurl.cpp	2026-08-10 13:38:23
+@@ -70,10 +70,15 @@
+         }
+ 
+         if (data.toLower().startsWith("charset")) {
++            // A "data:charset,..." URL leaves data == "charset" (7 bytes) at
++            // this point, so the pre-existing "data.at(7)" reads walk off
++            // the end and Q_ASSERT inside QByteArray::at() aborts the
++            // process on any build compiled with asserts enabled.  Guard
++            // both indices against the actual byte-array length.
+             int i = 7;      // strlen("charset")
+-            while (data.at(i) == ' ')
++            while (i < data.size() && data.at(i) == ' ')
+                 ++i;
+-            if (data.at(i) == '=')
++            if (i < data.size() && data.at(i) == '=')
+                 data.prepend("text/plain;");
+         }
+ 
+diff -ruN qt-src-pristine/qtbase/src/corelib/io/qlockfile_unix.cpp qt-src-patched/qtbase/src/corelib/io/qlockfile_unix.cpp
+--- qt-src-pristine/qtbase/src/corelib/io/qlockfile_unix.cpp	2017-09-06 13:13:54
++++ qt-src-patched/qtbase/src/corelib/io/qlockfile_unix.cpp	2026-08-10 13:38:23
+@@ -71,11 +71,16 @@
+ 
+ static QByteArray localHostName() // from QHostInfo::localHostName(), modified to return a QByteArray
+ {
+-    QByteArray hostName(512, Qt::Uninitialized);
+-    if (gethostname(hostName.data(), hostName.size()) == -1)
++    // Use a plain char[] so __builtin_object_size returns the correct size and
++    // glibc FORTIFY_SOURCE does not abort with "buffer overflow detected" on
++    // Ubuntu 24.04 (glibc 2.39).  QByteArray::data() returns a char* whose
++    // object size is invisible to the compiler, causing __gethostname_chk to
++    // compare buflen(512) > nreal(0) and call abort().
++    char hostNameBuf[512];
++    if (gethostname(hostNameBuf, sizeof(hostNameBuf)) == -1)
+         return QByteArray();
+-    hostName.truncate(strlen(hostName.data()));
+-    return hostName;
++    hostNameBuf[sizeof(hostNameBuf) - 1] = '\0';
++    return QByteArray(hostNameBuf);
+ }
+ 
+ // ### merge into qt_safe_write?
+diff -ruN qt-src-pristine/qtbase/src/corelib/io/qurl.h qt-src-patched/qtbase/src/corelib/io/qurl.h
+--- qt-src-pristine/qtbase/src/corelib/io/qurl.h	2017-09-06 13:13:54
++++ qt-src-patched/qtbase/src/corelib/io/qurl.h	2026-08-10 13:38:23
+@@ -65,8 +65,8 @@
+     Q_DECL_CONSTEXPR inline QUrlTwoFlags(E1 f) : i(f) {}
+     Q_DECL_CONSTEXPR inline QUrlTwoFlags(E2 f) : i(f) {}
+     Q_DECL_CONSTEXPR inline QUrlTwoFlags(QFlag f) : i(f) {}
+-    Q_DECL_CONSTEXPR inline QUrlTwoFlags(QFlags<E1> f) : i(f.operator int()) {}
+-    Q_DECL_CONSTEXPR inline QUrlTwoFlags(QFlags<E2> f) : i(f.operator int()) {}
++    Q_DECL_CONSTEXPR inline QUrlTwoFlags(QFlags<E1> f) : i(int(f)) {}
++    Q_DECL_CONSTEXPR inline QUrlTwoFlags(QFlags<E2> f) : i(int(f)) {}
+     Q_DECL_CONSTEXPR inline QUrlTwoFlags(Zero = 0) : i(0) {}
+ 
+     inline QUrlTwoFlags &operator&=(int mask) { i &= mask; return *this; }
+diff -ruN qt-src-pristine/qtbase/src/corelib/json/qjsonobject.cpp qt-src-patched/qtbase/src/corelib/json/qjsonobject.cpp
+--- qt-src-pristine/qtbase/src/corelib/json/qjsonobject.cpp	2017-09-06 13:13:54
++++ qt-src-patched/qtbase/src/corelib/json/qjsonobject.cpp	2026-08-10 13:38:23
+@@ -261,7 +261,17 @@
+     if (o) {
+         for (uint i = 0; i < o->length; ++i) {
+             QJsonPrivate::Entry *e = o->entryAt(i);
+-            map.insert(e->key(), QJsonValue(d, o, e->value).toVariant());
++            // Preserve integer-valued doubles as qlonglong so QVariant::toInt() works correctly.
++            QJsonValue v(d, o, e->value);
++            if (v.type() == QJsonValue::Double) {
++                const double dbl = v.toDouble();
++                if (dbl == static_cast<double>(static_cast<qlonglong>(dbl)))
++                    map.insert(e->key(), QVariant(static_cast<qlonglong>(dbl)));
++                else
++                    map.insert(e->key(), QVariant(dbl));
++            } else {
++                map.insert(e->key(), v.toVariant());
++            }
+         }
+     }
+     return map;
+diff -ruN qt-src-pristine/qtbase/src/corelib/json/qjsonwriter.cpp qt-src-patched/qtbase/src/corelib/json/qjsonwriter.cpp
+--- qt-src-pristine/qtbase/src/corelib/json/qjsonwriter.cpp	2017-09-06 13:13:54
++++ qt-src-patched/qtbase/src/corelib/json/qjsonwriter.cpp	2026-08-10 13:38:23
+@@ -122,10 +122,18 @@
+         break;
+     case QJsonValue::Double: {
+         const double d = v.toDouble(b);
+-        if (qIsFinite(d)) // +2 to format to ensure the expected precision
+-            json += QByteArray::number(d, 'g', std::numeric_limits<double>::digits10 + 2); // ::digits10 is 15
+-        else
++        if (qIsFinite(d)) {
++            // Use the shortest decimal precision that round-trips through parsing unchanged.
++            QByteArray s;
++            for (int prec = 6; prec <= std::numeric_limits<double>::digits10 + 2; ++prec) {
++                s = QByteArray::number(d, 'g', prec);
++                if (s.toDouble() == d)
++                    break;
++            }
++            json += s;
++        } else {
+             json += "null"; // +INF || -INF || NaN (see RFC4627#section2.4)
++        }
+         break;
+     }
+     case QJsonValue::String:
+diff -ruN qt-src-pristine/qtbase/src/corelib/kernel/qcoreapplication.cpp qt-src-patched/qtbase/src/corelib/kernel/qcoreapplication.cpp
+--- qt-src-pristine/qtbase/src/corelib/kernel/qcoreapplication.cpp	2017-09-06 13:13:54
++++ qt-src-patched/qtbase/src/corelib/kernel/qcoreapplication.cpp	2026-08-10 13:38:23
+@@ -1932,27 +1932,60 @@
+     return false;
+ }
+ 
++namespace {
++// Inspect the percent sign at index `percentPos` in `text` and decide
++// whether it begins a "%n" or "%Ln" placeholder that replacePercentN()
++// should rewrite. On a match the total span (including the leading '%')
++// is written to *placeholderLen (2 for "%n", 3 for "%Ln") and the
++// function returns true. On any other character sequence, including a
++// lone '%' at the very end of the string, the function returns false
++// without touching *placeholderLen, so the caller knows to leave the
++// percent sign alone and walk past it.
++bool epgInspectPercentN(const QString &text, int percentPos, int *placeholderLen)
++{
++    const int trailing = text.length() - percentPos - 1;
++    if (trailing <= 0) {
++        return false;
++    }
++    int probe = percentPos + 1;
++    int span = 2;
++    if (text.at(probe) == QLatin1Char('L')) {
++        if (trailing < 2) {
++            return false;
++        }
++        ++probe;
++        span = 3;
++    }
++    if (text.at(probe) != QLatin1Char('n')) {
++        return false;
++    }
++    *placeholderLen = span;
++    return true;
++}
++} // namespace
++
+ static void replacePercentN(QString *result, int n)
+ {
+-    if (n >= 0) {
+-        int percentPos = 0;
+-        int len = 0;
+-        while ((percentPos = result->indexOf(QLatin1Char('%'), percentPos + len)) != -1) {
+-            len = 1;
+-            QString fmt;
+-            if (result->at(percentPos + len) == QLatin1Char('L')) {
+-                ++len;
+-                fmt = QLatin1String("%L1");
+-            } else {
+-                fmt = QLatin1String("%1");
+-            }
+-            if (result->at(percentPos + len) == QLatin1Char('n')) {
+-                fmt = fmt.arg(n);
+-                ++len;
+-                result->replace(percentPos, len, fmt);
+-                len = fmt.length();
+-            }
++    if (n < 0) {
++        return;
++    }
++    int searchFrom = 0;
++    while (true) {
++        const int percentPos = result->indexOf(QLatin1Char('%'), searchFrom);
++        if (percentPos < 0) {
++            break;
+         }
++        int placeholderLen = 0;
++        if (!epgInspectPercentN(*result, percentPos, &placeholderLen)) {
++            // Either a trailing lone '%' or a percent sequence that is
++            // not "%n" / "%Ln" — leave it untouched and resume searching
++            // immediately after this percent sign.
++            searchFrom = percentPos + 1;
++            continue;
++        }
++        const QString fmt = QString::fromLatin1(placeholderLen == 3 ? "%L1" : "%1").arg(n);
++        result->replace(percentPos, placeholderLen, fmt);
++        searchFrom = percentPos + fmt.length();
+     }
+ }
+ 
+diff -ruN qt-src-pristine/qtbase/src/corelib/kernel/qmetaobject.cpp qt-src-patched/qtbase/src/corelib/kernel/qmetaobject.cpp
+--- qt-src-pristine/qtbase/src/corelib/kernel/qmetaobject.cpp	2017-09-06 13:13:54
++++ qt-src-patched/qtbase/src/corelib/kernel/qmetaobject.cpp	2026-08-10 13:38:23
+@@ -2966,14 +2966,11 @@
+ 
+     uint t = QVariant::Int;
+     if (isEnumType()) {
+-        /*
+-          try to create a QVariant that can be converted to this enum
+-          type (only works if the enum has already been registered
+-          with QMetaType)
+-        */
+-        int enumMetaTypeId = QMetaType::type(qualifiedName(menum));
+-        if (enumMetaTypeId != QMetaType::UnknownType)
+-            t = enumMetaTypeId;
++        // Always read enum-typed properties as int (not as the enum's registered QMetaType).
++        // This ensures QVariant::toString() returns the integer value ("1") rather than
++        // a registered key-name converter's output ("ACTIVE"), which is the behaviour
++        // expected by QML and our own codebase.
++        // t stays as QVariant::Int (the default above).
+     } else {
+         int handle = priv(mobj->d.data)->propertyData + 3*idx;
+         const char *typeName = 0;
+@@ -2993,6 +2990,11 @@
+                 return QVariant();
+             }
+         }
++        // If the resolved type has a registered int converter (e.g. Q_ENUM_NS types
++        // registered via our metatype extensions), read the property as int so that
++        // enum-typed properties are consistently stored as QVariant(int).
++        if (t >= QMetaType::User && QMetaType::hasRegisteredConverterFunction(t, QMetaType::Int))
++            t = QVariant::Int;
+     }
+ 
+     // the status variable is changed by qt_metacall to indicate what it did
+@@ -3619,5 +3621,21 @@
+     }
+     return list;
+ }
++
++// Helper: enum value → key name lookup via QMetaObject.
++// Declared Q_CORE_EXPORT in the qt563_install.patch extension header
++// (QtCore/qmetatype.h). Defined here (not inline in the header) to avoid the
++// circular include chain qmetatype.h → qmetaobject.h → qvariant.h.
++namespace QtPrivate {
++Q_CORE_EXPORT const char *qt563_enumValueToKey(const QMetaObject *mo, const char *enumName, int value) Q_DECL_NOEXCEPT
++{
++    if (!mo || !enumName)
++        return Q_NULLPTR;
++    const int idx = mo->indexOfEnumerator(enumName);
++    if (idx < 0)
++        return Q_NULLPTR;
++    return mo->enumerator(idx).valueToKey(value);
++}
++} // namespace QtPrivate
+ 
+ QT_END_NAMESPACE
+diff -ruN qt-src-pristine/qtbase/src/corelib/kernel/qobject.cpp qt-src-patched/qtbase/src/corelib/kernel/qobject.cpp
+--- qt-src-pristine/qtbase/src/corelib/kernel/qobject.cpp	2017-09-06 13:13:54
++++ qt-src-patched/qtbase/src/corelib/kernel/qobject.cpp	2026-08-10 13:38:23
+@@ -4670,7 +4670,7 @@
+                                              QtPrivate::QSlotObjectBase *slotObj, Qt::ConnectionType type,
+                                              const int *types, const QMetaObject *senderMetaObject)
+ {
+-    if (!sender || !slotObj || !senderMetaObject) {
++    if (!sender || !receiver || !slotObj || !senderMetaObject) {
+         qWarning("QObject::connect: invalid null parameter");
+         if (slotObj)
+             slotObj->destroyIfLastRef();
+diff -ruN qt-src-pristine/qtbase/src/corelib/kernel/qvariant.cpp qt-src-patched/qtbase/src/corelib/kernel/qvariant.cpp
+--- qt-src-pristine/qtbase/src/corelib/kernel/qvariant.cpp	2017-09-06 13:13:54
++++ qt-src-patched/qtbase/src/corelib/kernel/qvariant.cpp	2026-08-10 13:38:23
+@@ -436,7 +436,9 @@
+             *str = QString::number(d->data.f, 'g', max_digits10_float);
+             break;
+         case QVariant::Double:
+-            *str = QString::number(d->data.d, 'g', max_digits10_double);
++            // Use DBL_DIG (15) significant digits instead of max_digits10 (17) to avoid
++            // floating-point noise in the trailing digits (e.g. 19.99 -> "19.989999999999998").
++            *str = QString::number(d->data.d, 'g', DBL_DIG);
+             break;
+ #if !defined(QT_NO_DATESTRING)
+         case QVariant::Date:
+@@ -625,7 +627,7 @@
+             *ba = v_cast<QString>(d)->toUtf8();
+             break;
+         case QVariant::Double:
+-            *ba = QByteArray::number(d->data.d, 'g', max_digits10_double);
++            *ba = QByteArray::number(d->data.d, 'g', DBL_DIG);
+             break;
+         case QMetaType::Float:
+             *ba = QByteArray::number(d->data.f, 'g', max_digits10_float);
+@@ -2256,6 +2258,13 @@
+ */
+ QVariantMap QVariant::toMap() const
+ {
++    if (d.type == QMetaType::QVariantHash) {
++        const QVariantHash hash = qVariantToHelper<QVariantHash>(d, handlerManager);
++        QVariantMap map;
++        for (auto it = hash.cbegin(), end = hash.cend(); it != end; ++it)
++            map.insert(it.key(), it.value());
++        return map;
++    }
+     return qVariantToHelper<QVariantMap>(d, handlerManager);
+ }
+ 
+@@ -2585,7 +2594,9 @@
+ */
+ QJsonObject QVariant::toJsonObject() const
+ {
+-    return qVariantToHelper<QJsonObject>(d, handlerManager);
++    if (d.type == QMetaType::QJsonObject)
++        return qVariantToHelper<QJsonObject>(d, handlerManager);
++    return QJsonObject::fromVariantMap(toMap());
+ }
+ 
+ /*!
+@@ -2598,7 +2609,9 @@
+ */
+ QJsonArray QVariant::toJsonArray() const
+ {
+-    return qVariantToHelper<QJsonArray>(d, handlerManager);
++    if (d.type == QMetaType::QJsonArray)
++        return qVariantToHelper<QJsonArray>(d, handlerManager);
++    return QJsonArray::fromVariantList(toList());
+ }
+ 
+ /*!
+diff -ruN qt-src-pristine/qtbase/src/corelib/kernel/qvariant.h qt-src-patched/qtbase/src/corelib/kernel/qvariant.h
+--- qt-src-pristine/qtbase/src/corelib/kernel/qvariant.h	2017-09-06 13:13:54
++++ qt-src-patched/qtbase/src/corelib/kernel/qvariant.h	2026-08-10 13:38:23
+@@ -42,7 +42,7 @@
+ #include <QtCore/qhash.h>
+ #include <QtCore/qstring.h>
+ #include <QtCore/qstringlist.h>
+-#include <QtCore/qobject.h>
++class QObject;
+ #ifndef QT_BOOTSTRAPPED
+ #include <QtCore/qbytearraylist.h>
+ #endif
+@@ -679,6 +679,7 @@
+     int size() const;
+ };
+ 
++#include <QtCore/qobject.h>
+ #ifndef QT_MOC
+ namespace QtPrivate {
+     template<typename T>
+diff -ruN qt-src-pristine/qtbase/src/corelib/plugin/qmachparser.cpp qt-src-patched/qtbase/src/corelib/plugin/qmachparser.cpp
+--- qt-src-pristine/qtbase/src/corelib/plugin/qmachparser.cpp	2017-09-06 13:13:54
++++ qt-src-patched/qtbase/src/corelib/plugin/qmachparser.cpp	2026-08-10 13:38:23
+@@ -54,7 +54,12 @@
+ #elif defined(Q_PROCESSOR_POWER_32)
+ static const cpu_type_t my_cputype = CPU_TYPE_POWERPC;
+ #elif defined(Q_PROCESSOR_ARM)
++#  if defined(Q_PROCESSOR_ARM_64)
++#    define MACHO64
++static const cpu_type_t my_cputype = CPU_TYPE_ARM64;
++#  else
+ static const cpu_type_t my_cputype = CPU_TYPE_ARM;
++#  endif
+ #else
+ #  error "Unknown CPU type"
+ #endif
+diff -ruN qt-src-pristine/qtbase/src/corelib/plugin/qpluginloader.cpp qt-src-patched/qtbase/src/corelib/plugin/qpluginloader.cpp
+--- qt-src-pristine/qtbase/src/corelib/plugin/qpluginloader.cpp	2017-09-06 13:13:54
++++ qt-src-patched/qtbase/src/corelib/plugin/qpluginloader.cpp	2026-08-10 13:38:23
+@@ -297,8 +297,15 @@
+     if (isAbsolute) {
+         paths.append(fileName.left(slash)); // don't include the '/'
+     } else {
++        // Only the locations registered via QCoreApplication::libraryPaths()
++        // are searched. The process working directory is deliberately NOT
++        // probed: doing so makes the loader pick up arbitrary shared
++        // objects that happen to sit next to the user when the program is
++        // launched, which is a privilege-escalation vector when the
++        // application is run from a world-writable place. Callers that
++        // genuinely need a relative-to-CWD lookup must pass an absolute
++        // path themselves.
+         paths = QCoreApplication::libraryPaths();
+-        paths.prepend(QStringLiteral(".")); // search in current dir first
+     }
+ 
+     foreach (const QString &path, paths) {
+diff -ruN qt-src-pristine/qtbase/src/corelib/thread/qfutureinterface.h qt-src-patched/qtbase/src/corelib/thread/qfutureinterface.h
+--- qt-src-pristine/qtbase/src/corelib/thread/qfutureinterface.h	2017-09-06 13:13:54
++++ qt-src-patched/qtbase/src/corelib/thread/qfutureinterface.h	2026-08-10 13:38:23
+@@ -279,15 +279,15 @@
+ class QFutureInterface<void> : public QFutureInterfaceBase
+ {
+ public:
+-    QFutureInterface<void>(State initialState = NoState)
++    QFutureInterface(QFutureInterfaceBase::State initialState = QFutureInterfaceBase::NoState)
+         : QFutureInterfaceBase(initialState)
+     { }
+-    QFutureInterface<void>(const QFutureInterface<void> &other)
++    QFutureInterface(const QFutureInterface<void> &other)
+         : QFutureInterfaceBase(other)
+     { }
+ 
+     static QFutureInterface<void> canceledResult()
+-    { return QFutureInterface(State(Started | Finished | Canceled)); }
++    { return QFutureInterface(QFutureInterfaceBase::State(QFutureInterfaceBase::Started | QFutureInterfaceBase::Finished | QFutureInterfaceBase::Canceled)); }
+ 
+     QFutureInterface<void> &operator=(const QFutureInterface<void> &other)
+     {
+diff -ruN qt-src-pristine/qtbase/src/corelib/tools/qlinkedlist.h qt-src-patched/qtbase/src/corelib/tools/qlinkedlist.h
+--- qt-src-pristine/qtbase/src/corelib/tools/qlinkedlist.h	2017-09-06 13:13:54
++++ qt-src-patched/qtbase/src/corelib/tools/qlinkedlist.h	2026-08-10 13:38:23
+@@ -330,7 +330,12 @@
+         i = i->n;
+         delete n;
+     }
+-    delete x;
++    // shared_null is a static object, not heap-allocated; guard prevents
++    // -Wfree-nonheap-object from GCC 12+ when the pointer-provenance analysis
++    // can see a path from the default constructor (which sets d = &shared_null)
++    // through deref() returning false into this delete.
++    if (x != const_cast<QLinkedListData *>(&QLinkedListData::shared_null))
++        delete x;
+ }
+ 
+ template <typename T>
+diff -ruN qt-src-pristine/qtbase/src/corelib/tools/qsimd_p.h qt-src-patched/qtbase/src/corelib/tools/qsimd_p.h
+--- qt-src-pristine/qtbase/src/corelib/tools/qsimd_p.h	2017-09-06 13:13:54
++++ qt-src-patched/qtbase/src/corelib/tools/qsimd_p.h	2026-08-10 13:38:23
+@@ -456,6 +456,9 @@
+     && !defined(Q_CC_INTEL)
+ // Clang is missing the intrinsic for _bit_scan_reverse
+ // GCC only added it in version 4.5
++// Guard against clang 19+ ia32intrin.h which already defines these as macros
++// expanding to __bsrd/__bsfd builtins (causing redefinition errors).
++#  ifndef _bit_scan_reverse
+ static inline __attribute__((always_inline))
+ unsigned _bit_scan_reverse(unsigned val)
+ {
+@@ -463,6 +466,8 @@
+     asm("bsr %1, %0" : "=r" (result) : "r" (val));
+     return result;
+ }
++#  endif
++#  ifndef _bit_scan_forward
+ static inline __attribute__((always_inline))
+ unsigned _bit_scan_forward(unsigned val)
+ {
+@@ -470,6 +475,7 @@
+     asm("bsf %1, %0" : "=r" (result) : "r" (val));
+     return result;
+ }
++#  endif
+ #  endif
+ #endif // Q_PROCESSOR_X86
+ 
+diff -ruN qt-src-pristine/qtbase/src/corelib/xml/qxmlstream.cpp qt-src-patched/qtbase/src/corelib/xml/qxmlstream.cpp
+--- qt-src-pristine/qtbase/src/corelib/xml/qxmlstream.cpp	2017-09-06 13:13:54
++++ qt-src-patched/qtbase/src/corelib/xml/qxmlstream.cpp	2026-08-10 13:38:23
+@@ -1288,6 +1288,19 @@
+     int n = 0;
+     uint c;
+     while ((c = getChar()) != StreamEOF) {
++        // CVE-2023-37369: an XML document with an attribute or element name
++        // longer than 4096 characters is not a valid name per any reasonable
++        // implementation limit. Without this guard, textBuffer grows
++        // unbounded until the process runs out of memory (OOM DoS).
++        // Raise a well-formed error and return 0 so the caller aborts
++        // the current token. The existing int *prefix signature and both
++        // call sites in qxmlstream_p.h require no modification.
++        if (n >= 4096) {
++            raiseWellFormedError(QXmlStream::tr(
++                "XML attribute or element name exceeds maximum supported "
++                "length of 4096 characters."));
++            return 0;
++        }
+         switch (c) {
+         case '\n':
+         case ' ':
+diff -ruN qt-src-pristine/qtbase/src/gui/image/qgifhandler.cpp qt-src-patched/qtbase/src/gui/image/qgifhandler.cpp
+--- qt-src-pristine/qtbase/src/gui/image/qgifhandler.cpp	2017-09-06 13:13:54
++++ qt-src-patched/qtbase/src/gui/image/qgifhandler.cpp	2026-08-10 13:38:23
+@@ -49,7 +49,24 @@
+ // avoid going through QImage::scanLine() which calls detach
+ #define FAST_SCAN_LINE(bits, bpl, y) (bits + (y) * bpl)
+ 
++namespace {
++// Build a zero-initialised frame buffer of the requested size. Returns
++// true on success. On failure (Qt refused the allocation, e.g. because
++// the dimensions are pathological or the system is out of memory), the
++// out-parameter is left in its default-constructed null state and the
++// caller is expected to abort the decode.
++bool gifMakeFrameBuffer(QImage *target, int width, int height, QImage::Format fmt)
++{
++    QImage candidate(width, height, fmt);
++    if (candidate.isNull())
++        return false;
++    memset(candidate.bits(), 0, candidate.byteCount());
++    *target = candidate;
++    return true;
++}
++} // anonymous namespace
+ 
++
+ /*
+   Incremental image decoder for GIF image format.
+ 
+@@ -345,10 +362,12 @@
+ 
+                 QImage::Format format = trans_index >= 0 ? QImage::Format_ARGB32 : QImage::Format_RGB32;
+                 if (image->isNull()) {
+-                    (*image) = QImage(swidth, sheight, format);
++                    if (!gifMakeFrameBuffer(image, swidth, sheight, format)) {
++                        state = Error;
++                        return -1;
++                    }
+                     bpl = image->bytesPerLine();
+                     bits = image->bits();
+-                    memset(bits, 0, image->byteCount());
+                 }
+ 
+                 // Check if the previous attempt to create the image failed. If it
+@@ -406,10 +425,13 @@
+                     if (backingstore.width() < w
+                         || backingstore.height() < h) {
+                         // We just use the backing store as a byte array
+-                        backingstore = QImage(qMax(backingstore.width(), w),
+-                                              qMax(backingstore.height(), h),
+-                                              QImage::Format_RGB32);
+-                        memset(backingstore.bits(), 0, backingstore.byteCount());
++                        if (!gifMakeFrameBuffer(&backingstore,
++                                                qMax(backingstore.width(), w),
++                                                qMax(backingstore.height(), h),
++                                                QImage::Format_RGB32)) {
++                            state = Error;
++                            return -1;
++                        }
+                     }
+                     const int dest_bpl = backingstore.bytesPerLine();
+                     unsigned char *dest_data = backingstore.bits();
+diff -ruN qt-src-pristine/qtbase/src/gui/image/qimage_conversions.cpp qt-src-patched/qtbase/src/gui/image/qimage_conversions.cpp
+--- qt-src-pristine/qtbase/src/gui/image/qimage_conversions.cpp	2017-09-06 13:13:54
++++ qt-src-patched/qtbase/src/gui/image/qimage_conversions.cpp	2026-08-10 13:38:23
+@@ -2946,7 +2946,7 @@
+     }
+ #endif
+ 
+-#if defined(__ARM_NEON__)
++#if defined(__ARM_NEON__) && !defined(__APPLE__)
+     extern void convert_RGB888_to_RGB32_neon(QImageData *dest, const QImageData *src, Qt::ImageConversionFlags);
+     qimage_converter_map[QImage::Format_RGB888][QImage::Format_RGB32] = convert_RGB888_to_RGB32_neon;
+     qimage_converter_map[QImage::Format_RGB888][QImage::Format_ARGB32] = convert_RGB888_to_RGB32_neon;
+diff -ruN qt-src-pristine/qtbase/src/gui/image/qjpeghandler.cpp qt-src-patched/qtbase/src/gui/image/qjpeghandler.cpp
+--- qt-src-pristine/qtbase/src/gui/image/qjpeghandler.cpp	2017-09-06 13:13:54
++++ qt-src-patched/qtbase/src/gui/image/qjpeghandler.cpp	2026-08-10 13:38:23
+@@ -989,7 +989,7 @@
+ QJpegHandler::QJpegHandler()
+     : d(new QJpegHandlerPrivate(this))
+ {
+-#if defined(__ARM_NEON__)
++#if defined(__ARM_NEON__) && !defined(__APPLE__)
+     // from qimage_neon.cpp
+     if (qCpuHasFeature(NEON))
+         d->rgb888ToRgb32ConverterPtr = qt_convert_rgb888_to_rgb32_neon;
+diff -ruN qt-src-pristine/qtbase/src/gui/image/qpnghandler.cpp qt-src-patched/qtbase/src/gui/image/qpnghandler.cpp
+--- qt-src-pristine/qtbase/src/gui/image/qpnghandler.cpp	2017-09-06 13:13:54
++++ qt-src-patched/qtbase/src/gui/image/qpnghandler.cpp	2026-08-10 13:38:23
+@@ -272,7 +272,7 @@
+             }
+         } else if (bit_depth == 16 && png_get_valid(png_ptr, info_ptr, PNG_INFO_tRNS)) {
+             png_set_expand(png_ptr);
+-            png_set_strip_16(png_ptr);
++            png_set_scale_16(png_ptr);
+             png_set_gray_to_rgb(png_ptr);
+             if (image.size() != QSize(width, height) || image.format() != QImage::Format_ARGB32) {
+                 image = QImage(width, height, QImage::Format_ARGB32);
+@@ -294,7 +294,7 @@
+             png_read_update_info(png_ptr, info_ptr);
+         } else {
+             if (bit_depth == 16)
+-                png_set_strip_16(png_ptr);
++                png_set_scale_16(png_ptr);
+             else if (bit_depth < 8)
+                 png_set_packing(png_ptr);
+             int ncols = bit_depth < 8 ? 1 << bit_depth : 256;
+@@ -359,7 +359,7 @@
+     } else {
+         // 32-bit
+         if (bit_depth == 16)
+-            png_set_strip_16(png_ptr);
++            png_set_scale_16(png_ptr);
+ 
+         png_set_expand(png_ptr);
+ 
+diff -ruN qt-src-pristine/qtbase/src/gui/image/qxbmhandler.cpp qt-src-patched/qtbase/src/gui/image/qxbmhandler.cpp
+--- qt-src-pristine/qtbase/src/gui/image/qxbmhandler.cpp	2017-09-06 13:13:54
++++ qt-src-patched/qtbase/src/gui/image/qxbmhandler.cpp	2026-08-10 13:38:23
+@@ -131,6 +131,14 @@
+         p = strstr(buf, "0x");
+     } while (!p);
+ 
++    // End-of-data cursor for the current buffer. Re-set whenever buf is
++    // refilled below. Used to bound-check the two characters that
++    // hex2byte() will read past the "0x" prefix; without this guard a
++    // truncated XBM line that ends with "0x" causes hex2byte() to read
++    // uninitialised stack bytes (a 2-byte heap/stack OOB read), and to
++    // decode garbage into the destination image.
++    const char *p_end = buf + readBytes;
++
+     if (outImage->size() != QSize(w, h) || outImage->format() != QImage::Format_MonoLSB) {
+         *outImage = QImage(w, h, QImage::Format_MonoLSB);
+         if (outImage->isNull())
+@@ -147,6 +155,15 @@
+ 
+     while (y < h) {                                // for all encoded bytes...
+         if (p) {                                // p = "0x.."
++            // Skip a "0x" token that lies too close to the end of the
++            // line to carry two real hex digits, or whose trailing
++            // characters are not hex at all. See p_end above.
++            if (p + 4 > p_end
++                    || !isxdigit(static_cast<uchar>(p[2]))
++                    || !isxdigit(static_cast<uchar>(p[3]))) {
++                p = strstr(p + 2, "0x");
++                continue;
++            }
+             *b++ = hex2byte(p+2);
+             p += 2;
+             if (++x == w && ++y < h) {
+@@ -159,6 +176,7 @@
+                 break;
+             buf[readBytes] = '\0';
+             p = strstr(buf, "0x");
++            p_end = buf + readBytes;
+         }
+     }
+ 
+diff -ruN qt-src-pristine/qtbase/src/gui/kernel/qopenglcontext.cpp qt-src-patched/qtbase/src/gui/kernel/qopenglcontext.cpp
+--- qt-src-pristine/qtbase/src/gui/kernel/qopenglcontext.cpp	2017-09-06 13:13:54
++++ qt-src-patched/qtbase/src/gui/kernel/qopenglcontext.cpp	2026-08-10 13:38:23
+@@ -950,8 +950,13 @@
+     if (!isValid())
+         return false;
+ 
+-    if (thread() != QThread::currentThread())
+-        qFatal("Cannot make QOpenGLContext current in a different thread");
++    if (thread() != QThread::currentThread()) {
++        // AA_DontCheckOpenGLContextThreadAffinity = 26, added in qt563_install.patch.
++        // Using a numeric cast so this file compiles without needing the enum defined here.
++        const auto kDontCheckAffinity = static_cast<Qt::ApplicationAttribute>(26);
++        if (!QCoreApplication::testAttribute(kDontCheckAffinity))
++            qFatal("Cannot make QOpenGLContext current in a different thread");
++    }
+ 
+     if (!surface) {
+         doneCurrent();
+diff -ruN qt-src-pristine/qtbase/src/gui/painting/qdrawhelper.cpp qt-src-patched/qtbase/src/gui/painting/qdrawhelper.cpp
+--- qt-src-pristine/qtbase/src/gui/painting/qdrawhelper.cpp	2017-09-06 13:13:54
++++ qt-src-patched/qtbase/src/gui/painting/qdrawhelper.cpp	2026-08-10 13:38:23
+@@ -5570,7 +5570,8 @@
+     bool isVerticalGradient =
+         data->txop <= QTransform::TxScale &&
+         data->type == QSpanData::LinearGradient &&
+-        data->gradient.linear.end.x == data->gradient.linear.origin.x;
++        data->gradient.linear.end.x == data->gradient.linear.origin.x &&
++        !data->gradient.alphaColor;
+ 
+     if (isVerticalGradient) {
+         LinearGradientValues linear;
+diff -ruN qt-src-pristine/qtbase/src/gui/painting/qstroker.cpp qt-src-patched/qtbase/src/gui/painting/qstroker.cpp
+--- qt-src-pristine/qtbase/src/gui/painting/qstroker.cpp	2017-09-06 13:13:54
++++ qt-src-patched/qtbase/src/gui/painting/qstroker.cpp	2026-08-10 13:38:23
+@@ -1093,6 +1093,18 @@
+ #endif
+ }
+ 
++namespace {
++// Upper bound on how many dash periods we are willing to emit for a single
++// line segment inside QDashStroker. A pathological combination (tiny dash
++// pattern + extreme scaling, or a hostile SVG path) can otherwise drive the
++// dasher to spit out millions of microscopic moveTo/lineTo pairs that grow
++// QOutlineMapper's element buffer without bound, eventually triggering an
++// out-of-bounds write inside convertPath(). At ~10k periods per segment the
++// individual dashes are far smaller than a sub-pixel anyway, so falling
++// back to a single solid line is visually indistinguishable.
++constexpr int kDashSafetyMaxCycles = 10000;
++} // namespace
++
+ void QDashStroker::processCurrentSubpath()
+ {
+     int dashCount = qMin(m_dashPattern.size(), 32);
+@@ -1169,6 +1181,18 @@
+         elen = cline.length();
+ 
+         estop = estart + elen;
++
++        // Refuse to expand a single segment into an unbounded number of
++        // dashes. See kDashSafetyMaxCycles above for the rationale.
++        if (elen * invSumLength > kDashSafetyMaxCycles) {
++            emitMoveTo(prev.x, prev.y);
++            emitLineTo(e.x, e.y);
++            hasMoveTo = false;
++            move_to_pos = e;
++            estart = estop;
++            prev = e;
++            continue;
++        }
+ 
+         bool done = pos >= estop;
+ 
+diff -ruN qt-src-pristine/qtbase/src/gui/text/qfontdatabase.cpp qt-src-patched/qtbase/src/gui/text/qfontdatabase.cpp
+--- qt-src-pristine/qtbase/src/gui/text/qfontdatabase.cpp	2017-09-06 13:13:54
++++ qt-src-patched/qtbase/src/gui/text/qfontdatabase.cpp	2026-08-10 13:38:23
+@@ -2433,7 +2433,31 @@
+ 
+     applicationFonts[i] = font;
+ 
+-    invalidate();
++    // 5.6.3 unconditionally called invalidate() here, which clears the
++    // entire font cache and forces the next render to walk the system
++    // font list AND re-call registerFont() on every previously added
++    // application font (via the reregisterAppFonts flag set by
++    // registerFont above). On Linux/fontconfig that re-call goes back
++    // through FT_New_Memory_Face / FT_Open_Face for each font — a
++    // multi-megabyte parse per file. For a tight loop adding several
++    // EPG fonts (CC preview generator, application font registration
++    // at start-up) this turns into an O(N²) reparse storm.
++    //
++    // When the local database has already been populated (count > 0),
++    // the just-registered font is already present in the platform
++    // layer (e.g. fontconfig keeps it in FcSetApplication across
++    // QPlatformFontDatabase::invalidate(), which is a no-op there).
++    // Subsequent QFont lookups will resolve through the platform on
++    // the next natural repopulation, so we just emit the change
++    // signal and skip the wasted invalidation. The original code
++    // path is retained for the cold-start case (count == 0) where the
++    // platform db has never been populated and the listeners need a
++    // proper reload.
++    if (privateDb()->count == 0) {
++        invalidate();
++    } else {
++        emit static_cast<QGuiApplication *>(QCoreApplication::instance())->fontDatabaseChanged();
++    }
+     return i;
+ }
+ 
+diff -ruN qt-src-pristine/qtbase/src/gui/text/qtextdocumentlayout.cpp qt-src-patched/qtbase/src/gui/text/qtextdocumentlayout.cpp
+--- qt-src-pristine/qtbase/src/gui/text/qtextdocumentlayout.cpp	2017-09-06 13:13:54
++++ qt-src-patched/qtbase/src/gui/text/qtextdocumentlayout.cpp	2026-08-10 13:38:23
+@@ -2963,8 +2963,20 @@
+ 
+     d->insideDocumentChange = false;
+ 
+-    for (QTextBlock blockIt = startIt; blockIt.isValid() && blockIt != endIt; blockIt = blockIt.next())
+-         emit updateBlock(blockIt);
++    // 5.6.3 unconditionally walked every block of the changed range
++    // and emitted updateBlock() for each, even when no view was
++    // connected. For headless QTextDocument users (HTML entity
++    // decoding via setHtml(), background plain-text extraction) this
++    // turns every setHtml() call into an O(blocks) signal-dispatch
++    // loop with no observable effect. The condition below short-
++    // circuits the loop when nothing is listening; connected views
++    // such as QTextEdit / QTextBrowser still get the original
++    // per-block notifications and therefore the same redraw
++    // behaviour as before.
++    if (receivers(SIGNAL(updateBlock(QTextBlock))) > 0) {
++        for (QTextBlock blockIt = startIt; blockIt.isValid() && blockIt != endIt; blockIt = blockIt.next())
++            emit updateBlock(blockIt);
++    }
+ 
+     if (d->showLayoutProgress) {
+         const QSizeF newSize = dynamicDocumentSize();
+diff -ruN qt-src-pristine/qtbase/src/gui/text/qtextlayout.cpp qt-src-patched/qtbase/src/gui/text/qtextlayout.cpp
+--- qt-src-pristine/qtbase/src/gui/text/qtextlayout.cpp	2017-09-06 13:13:54
++++ qt-src-patched/qtbase/src/gui/text/qtextlayout.cpp	2026-08-10 13:38:23
+@@ -2034,11 +2034,28 @@
+         eng->maxWidth = qMax(eng->maxWidth, line.textWidth);
+     } else {
+         eng->minWidth = qMax(eng->minWidth, lbh.minw);
+-        eng->maxWidth += line.textWidth;
++        // CVE-2023-32763: guard against integer overflow accumulating line widths.
++        // eng->maxWidth is a QFixed (16.6 fixed-point, underlying int). On a document
++        // with a very large number of very wide lines the unchecked += can wrap the
++        // signed int, producing a negative maxWidth and a crash in the renderer.
++        // Saturate at QFIXED_MAX instead of wrapping.
++        {
++            int overflowGuard;
++            if (__builtin_add_overflow(eng->maxWidth.value(), line.textWidth.value(), &overflowGuard))
++                eng->maxWidth = QFIXED_MAX;
++            else
++                eng->maxWidth.setValue(overflowGuard);
++        }
+     }
+ 
+-    if (line.textWidth > 0 && item < eng->layoutData->items.size())
+-        eng->maxWidth += lbh.spaceData.textWidth;
++    if (line.textWidth > 0 && item < eng->layoutData->items.size()) {
++        // CVE-2023-32763: same overflow guard for trailing-space width accumulation.
++        int overflowGuard;
++        if (__builtin_add_overflow(eng->maxWidth.value(), lbh.spaceData.textWidth.value(), &overflowGuard))
++            eng->maxWidth = QFIXED_MAX;
++        else
++            eng->maxWidth.setValue(overflowGuard);
++    }
+     if (eng->option.flags() & QTextOption::IncludeTrailingSpaces)
+         line.textWidth += lbh.spaceData.textWidth;
+     if (lbh.spaceData.length) {
+diff -ruN qt-src-pristine/qtbase/src/network/access/qhttpnetworkconnectionchannel.cpp qt-src-patched/qtbase/src/network/access/qhttpnetworkconnectionchannel.cpp
+--- qt-src-pristine/qtbase/src/network/access/qhttpnetworkconnectionchannel.cpp	2017-09-06 13:13:54
++++ qt-src-patched/qtbase/src/network/access/qhttpnetworkconnectionchannel.cpp	2026-08-10 14:04:08
+@@ -227,20 +227,28 @@
+ 
+ bool QHttpNetworkConnectionChannel::sendRequest()
+ {
+-    Q_ASSERT(!protocolHandler.isNull());
++    if (protocolHandler.isNull())
++        return false;
+     return protocolHandler->sendRequest();
+ }
+ 
+ 
+ void QHttpNetworkConnectionChannel::_q_receiveReply()
+ {
+-    Q_ASSERT(!protocolHandler.isNull());
++    // For SSL the protocol handler only exists after the handshake, but the
++    // socket may signal readyRead() before then; bail out rather than
++    // dereferencing a null handler.
++    if (protocolHandler.isNull())
++        return;
+     protocolHandler->_q_receiveReply();
+ }
+ 
+ void QHttpNetworkConnectionChannel::_q_readyRead()
+ {
+-    Q_ASSERT(!protocolHandler.isNull());
++    // See _q_receiveReply(): the handler may not exist yet during an SSL
++    // handshake, so bail out until it does.
++    if (protocolHandler.isNull())
++        return;
+     protocolHandler->_q_readyRead();
+ }
+ 
+@@ -544,7 +552,8 @@
+     case 302:
+     case 303:
+     case 305:
+-    case 307: {
++    case 307:
++    case 308: {
+         // Parse the response headers and get the "location" url
+         QUrl redirectUrl = connection->d_func()->parseRedirectResponse(socket, reply);
+         if (redirectUrl.isValid())
+@@ -839,6 +848,13 @@
+ {
+     if (!socket)
+         return;
++
++    // The owning connection may already be gone (its destructor closes the
++    // socket, which emits error() synchronously), leaving this guarded
++    // pointer null; bail out before dereferencing it below.
++    if (!connection)
++        return;
++
+     QNetworkReply::NetworkError errorCode = QNetworkReply::UnknownNetworkError;
+ 
+     switch (socketError) {
+diff -ruN qt-src-pristine/qtbase/src/network/access/qhttpnetworkreply.cpp qt-src-patched/qtbase/src/network/access/qhttpnetworkreply.cpp
+--- qt-src-pristine/qtbase/src/network/access/qhttpnetworkreply.cpp	2017-09-06 13:13:54
++++ qt-src-patched/qtbase/src/network/access/qhttpnetworkreply.cpp	2026-08-10 13:38:23
+@@ -92,7 +92,7 @@
+ bool QHttpNetworkReply::isHttpRedirect(int statusCode)
+ {
+     return (statusCode == 301 || statusCode == 302 || statusCode == 303
+-            || statusCode == 305 || statusCode == 307);
++            || statusCode == 305 || statusCode == 307 || statusCode == 308);
+ }
+ 
+ qint64 QHttpNetworkReply::contentLength() const
+diff -ruN qt-src-pristine/qtbase/src/network/access/qnetworkaccessmanager.cpp qt-src-patched/qtbase/src/network/access/qnetworkaccessmanager.cpp
+--- qt-src-pristine/qtbase/src/network/access/qnetworkaccessmanager.cpp	2017-09-06 13:13:54
++++ qt-src-patched/qtbase/src/network/access/qnetworkaccessmanager.cpp	2026-08-10 13:38:23
+@@ -1115,6 +1115,21 @@
+                                                     const QNetworkRequest &req,
+                                                     QIODevice *outgoingData)
+ {
++    // Fix cross-thread createRequest(): Qt 5.6.x refuses to create a QNetworkReply
++    // parented to a QNAM that lives on a different thread, silently dropping the reply.
++    // Marshal the call to the QNAM's own thread via a queued slot so creation always succeeds.
++    if (thread() != QThread::currentThread()) {
++        QNetworkAccessManagerPrivate::CrossThreadCreateRequest ctx;
++        ctx.op           = op;
++        ctx.req          = req;
++        ctx.outgoingData = outgoingData;
++        QMetaObject::invokeMethod(this, "_q_createRequestCrossThread",
++                                  Qt::QueuedConnection,
++                                  Q_ARG(void*, &ctx));
++        ctx.sem.acquire();
++        return ctx.reply;
++    }
++
+     Q_D(QNetworkAccessManager);
+ 
+     bool isLocalFile = req.url().isLocalFile();
+@@ -1769,6 +1784,14 @@
+     }
+ 
+     return newRequest;
++}
++
++void QNetworkAccessManagerPrivate::_q_createRequestCrossThread(void *vctx)
++{
++    Q_Q(QNetworkAccessManager);
++    CrossThreadCreateRequest *ctx = static_cast<CrossThreadCreateRequest *>(vctx);
++    ctx->reply = q->createRequest(ctx->op, ctx->req, ctx->outgoingData);
++    ctx->sem.release();
+ }
+ 
+ QT_END_NAMESPACE
+diff -ruN qt-src-pristine/qtbase/src/network/access/qnetworkaccessmanager.h qt-src-patched/qtbase/src/network/access/qnetworkaccessmanager.h
+--- qt-src-pristine/qtbase/src/network/access/qnetworkaccessmanager.h	2017-09-06 13:13:54
++++ qt-src-patched/qtbase/src/network/access/qnetworkaccessmanager.h	2026-08-10 13:38:23
+@@ -175,6 +175,7 @@
+ #ifndef QT_NO_BEARERMANAGEMENT
+     Q_PRIVATE_SLOT(d_func(), void _q_networkSessionClosed())
+     Q_PRIVATE_SLOT(d_func(), void _q_networkSessionStateChanged(QNetworkSession::State))
++    Q_PRIVATE_SLOT(d_func(), void _q_createRequestCrossThread(void*))
+     Q_PRIVATE_SLOT(d_func(), void _q_onlineStateChanged(bool))
+     Q_PRIVATE_SLOT(d_func(), void _q_configurationChanged(const QNetworkConfiguration &))
+     Q_PRIVATE_SLOT(d_func(), void _q_networkSessionFailed(QNetworkSession::SessionError))
+diff -ruN qt-src-pristine/qtbase/src/network/access/qnetworkaccessmanager_p.h qt-src-patched/qtbase/src/network/access/qnetworkaccessmanager_p.h
+--- qt-src-pristine/qtbase/src/network/access/qnetworkaccessmanager_p.h	2017-09-06 13:13:54
++++ qt-src-patched/qtbase/src/network/access/qnetworkaccessmanager_p.h	2026-08-10 13:38:23
+@@ -48,6 +48,7 @@
+ #include "qnetworkaccessmanager.h"
+ #include "qnetworkaccesscache_p.h"
+ #include "qnetworkaccessbackend_p.h"
++#include "QtCore/qsemaphore.h"
+ #include "private/qobject_p.h"
+ #include "QtNetwork/qnetworkproxy.h"
+ #include "QtNetwork/qnetworksession.h"
+@@ -143,6 +144,16 @@
+                                                         bool isSeamless);
+     void _q_networkSessionStateChanged(QNetworkSession::State state);
+     void _q_onlineStateChanged(bool isOnline);
++    // Cross-thread createRequest() fix: marshals calls from non-QNAM threads
++    // to the QNAM's own thread so QNetworkReply is always created on the correct thread.
++    struct CrossThreadCreateRequest {
++        QNetworkAccessManager::Operation op;
++        QNetworkRequest req;
++        QIODevice *outgoingData;
++        QNetworkReply *reply;
++        QSemaphore sem;
++    };
++    void _q_createRequestCrossThread(void *ctx);
+     void _q_configurationChanged(const QNetworkConfiguration &configuration);
+     void _q_networkSessionFailed(QNetworkSession::SessionError error);
+ 
+diff -ruN qt-src-pristine/qtbase/src/network/access/qnetworkreplyhttpimpl.cpp qt-src-patched/qtbase/src/network/access/qnetworkreplyhttpimpl.cpp
+--- qt-src-pristine/qtbase/src/network/access/qnetworkreplyhttpimpl.cpp	2017-09-06 13:13:54
++++ qt-src-patched/qtbase/src/network/access/qnetworkreplyhttpimpl.cpp	2026-08-10 13:38:23
+@@ -613,7 +613,7 @@
+         // We use the manager-global thread.
+         // At some point we could switch to having multiple threads if it makes sense.
+         managerPrivate->httpThread = new QThread();
+-        managerPrivate->httpThread->setObjectName(QStringLiteral("Qt HTTP thread"));
++        managerPrivate->httpThread->setObjectName(QCoreApplication::applicationName());
+         managerPrivate->httpThread->start();
+ 
+         thread = managerPrivate->httpThread;
+@@ -1082,19 +1082,24 @@
+ 
+ QNetworkAccessManager::Operation QNetworkReplyHttpImplPrivate::getRedirectOperation(QNetworkAccessManager::Operation currentOp, int httpStatus)
+ {
+-    // HTTP status code can be used to decide if we can redirect with a GET
+-    // operation or not. See http://www.ietf.org/rfc/rfc2616.txt [Sec 10.3] for
+-    // more details
+-    Q_UNUSED(httpStatus);
+-
+-    switch (currentOp) {
+-    case QNetworkAccessManager::HeadOperation:
++    // HEAD is always preserved regardless of the redirect status because
++    // HEAD is defined as the metadata-only counterpart of GET.
++    if (currentOp == QNetworkAccessManager::HeadOperation)
+         return QNetworkAccessManager::HeadOperation;
++
++    // RFC 7231 s.6.4.7 (307 Temporary Redirect) and RFC 7538 s.3
++    // (308 Permanent Redirect) require that the request method and the
++    // request body are preserved verbatim; the reply is then re-sent
++    // with the original verb (POST, PUT, DELETE, CUSTOM ...).  For the
++    // legacy 301, 302 and 303 status codes the historical browser
++    // behaviour of collapsing to GET is retained.
++    switch (httpStatus) {
++    case 307:
++    case 308:
++        return currentOp;
+     default:
+-        break;
++        return QNetworkAccessManager::GetOperation;
+     }
+-    // For now, we're always returning GET for anything other than HEAD
+-    return QNetworkAccessManager::GetOperation;
+ }
+ 
+ bool QNetworkReplyHttpImplPrivate::isHttpRedirectResponse() const
+@@ -1110,6 +1115,29 @@
+     newRequest.setUrl(url);
+     newRequest.setMaximumRedirectsAllowed(maxRedirectsRemaining);
+ 
++    // Cookies carried by the copied original request were selected by
++    // QNetworkAccessManagerPrivate::postProcess() for the ORIGINAL URL.
++    // A redirect may target a different host or path, and any Set-Cookie
++    // headers received in the redirect response have already been merged
++    // into the jar by _q_metaDataChanged() before this function runs.
++    // Rebuild the Cookie header for the redirect URL from the jar so that
++    //   (a) session cookies issued by the redirect response are actually
++    //       sent to the redirect target, and
++    //   (b) cookies scoped to the original host do not leak to the
++    //       redirect target.
++    newRequest.setHeader(QNetworkRequest::CookieHeader, QVariant());
++    const int cookieMode = newRequest.attribute(
++            QNetworkRequest::CookieLoadControlAttribute,
++            QNetworkRequest::Automatic).toInt();
++    if (cookieMode == QNetworkRequest::Automatic
++        && managerPrivate && managerPrivate->cookieJar) {
++        const QList<QNetworkCookie> cookies =
++            managerPrivate->cookieJar->cookiesForUrl(url);
++        if (!cookies.isEmpty())
++            newRequest.setHeader(QNetworkRequest::CookieHeader,
++                                 QVariant::fromValue(cookies));
++    }
++
+     return newRequest;
+ }
+ 
+@@ -1146,6 +1174,7 @@
+     case 302:                   // Found
+     case 303:                   // See Other
+     case 307:                   // Temporary Redirect
++    case 308:                   // Permanent Redirect
+         // What do we do about the caching of the HTML note?
+         // The response to a 303 MUST NOT be cached, while the response to
+         // all of the others is cacheable if the headers indicate it to be
+@@ -1179,6 +1208,15 @@
+ 
+     q->setAttribute(QNetworkRequest::HttpPipeliningWasUsedAttribute, pu);
+     q->setAttribute(QNetworkRequest::SpdyWasUsedAttribute, spdyWasUsed);
++
++    // Drop any headers left over from a previous response on the same reply
++    // object (for example the 401 that precedes a re-authenticated 200, or
++    // an HTTP-layer redirect that hands the same reply to a follow-up
++    // request).  Without this, the reconstruction loop below would fold the
++    // previous response's header values into the current one via ", " (or
++    // "\n" for Set-Cookie), producing malformed and cross-response values.
++    rawHeaders.clear();
++    cookedHeaders.clear();
+ 
+     // reconstruct the HTTP header
+     QList<QPair<QByteArray, QByteArray> > headerMap = hm;
+diff -ruN qt-src-pristine/qtbase/src/network/kernel/qdnslookup_unix.cpp qt-src-patched/qtbase/src/network/kernel/qdnslookup_unix.cpp
+--- qt-src-pristine/qtbase/src/network/kernel/qdnslookup_unix.cpp	2017-09-06 13:13:54
++++ qt-src-patched/qtbase/src/network/kernel/qdnslookup_unix.cpp	2026-08-10 13:38:23
+@@ -229,10 +229,23 @@
+     }
+     p += status + 4;
+ 
++    // CVE-2023-33285: the RR-parsing loop below reads TYPE / CLASS /
++    // TTL / RDLENGTH and RDATA at offsets derived from the reply
++    // itself.  A crafted reply can push those offsets past the fixed
++    // 512-byte response[] buffer, causing an out-of-bounds read.  The
++    // guards added below verify that every field lies inside
++    // [response, responseEnd) before it is read.
++    unsigned char * const responseEnd = response + responseLength;
++    if (p > responseEnd) {
++        reply->error = QDnsLookup::InvalidReplyError;
++        reply->errorString = tr("Invalid reply received");
++        return;
++    }
++
+     // Extract results.
+     int answerIndex = 0;
+-    while ((p < response + responseLength) && (answerIndex < answerCount)) {
+-        status = local_dn_expand(response, response + responseLength, p, host, sizeof(host));
++    while ((p < responseEnd) && (answerIndex < answerCount)) {
++        status = local_dn_expand(response, responseEnd, p, host, sizeof(host));
+         if (status < 0) {
+             reply->error = QDnsLookup::InvalidReplyError;
+             reply->errorString = tr("Could not expand domain name");
+@@ -241,6 +254,12 @@
+         const QString name = QUrl::fromAce(host);
+ 
+         p += status;
++        // Fixed RR header after NAME: TYPE(2) + CLASS(2) + TTL(4) + RDLENGTH(2) = 10 bytes.
++        if (p + 10 > responseEnd) {
++            reply->error = QDnsLookup::InvalidReplyError;
++            reply->errorString = tr("Invalid reply received");
++            return;
++        }
+         const quint16 type = (p[0] << 8) | p[1];
+         p += 2; // RR type
+         p += 2; // RR class
+@@ -249,6 +268,13 @@
+         const quint16 size = (p[0] << 8) | p[1];
+         p += 2;
+ 
++        // The declared RDATA window must lie entirely within the buffer.
++        if (p + size > responseEnd) {
++            reply->error = QDnsLookup::InvalidReplyError;
++            reply->errorString = tr("Invalid reply received");
++            return;
++        }
++
+         if (type == QDnsLookup::A) {
+             if (size != 4) {
+                 reply->error = QDnsLookup::InvalidReplyError;
+@@ -273,7 +299,7 @@
+             record.d->value = QHostAddress(p);
+             reply->hostAddressRecords.append(record);
+         } else if (type == QDnsLookup::CNAME) {
+-            status = local_dn_expand(response, response + responseLength, p, answer, sizeof(answer));
++            status = local_dn_expand(response, responseEnd, p, answer, sizeof(answer));
+             if (status < 0) {
+                 reply->error = QDnsLookup::InvalidReplyError;
+                 reply->errorString = tr("Invalid canonical name record");
+@@ -285,7 +311,7 @@
+             record.d->value = QUrl::fromAce(answer);
+             reply->canonicalNameRecords.append(record);
+         } else if (type == QDnsLookup::NS) {
+-            status = local_dn_expand(response, response + responseLength, p, answer, sizeof(answer));
++            status = local_dn_expand(response, responseEnd, p, answer, sizeof(answer));
+             if (status < 0) {
+                 reply->error = QDnsLookup::InvalidReplyError;
+                 reply->errorString = tr("Invalid name server record");
+@@ -297,7 +323,7 @@
+             record.d->value = QUrl::fromAce(answer);
+             reply->nameServerRecords.append(record);
+         } else if (type == QDnsLookup::PTR) {
+-            status = local_dn_expand(response, response + responseLength, p, answer, sizeof(answer));
++            status = local_dn_expand(response, responseEnd, p, answer, sizeof(answer));
+             if (status < 0) {
+                 reply->error = QDnsLookup::InvalidReplyError;
+                 reply->errorString = tr("Invalid pointer record");
+@@ -309,8 +335,13 @@
+             record.d->value = QUrl::fromAce(answer);
+             reply->pointerRecords.append(record);
+         } else if (type == QDnsLookup::MX) {
++            if (size < 2) {
++                reply->error = QDnsLookup::InvalidReplyError;
++                reply->errorString = tr("Invalid mail exchange record");
++                return;
++            }
+             const quint16 preference = (p[0] << 8) | p[1];
+-            status = local_dn_expand(response, response + responseLength, p + 2, answer, sizeof(answer));
++            status = local_dn_expand(response, responseEnd, p + 2, answer, sizeof(answer));
+             if (status < 0) {
+                 reply->error = QDnsLookup::InvalidReplyError;
+                 reply->errorString = tr("Invalid mail exchange record");
+@@ -323,10 +354,15 @@
+             record.d->timeToLive = ttl;
+             reply->mailExchangeRecords.append(record);
+         } else if (type == QDnsLookup::SRV) {
++            if (size < 6) {
++                reply->error = QDnsLookup::InvalidReplyError;
++                reply->errorString = tr("Invalid service record");
++                return;
++            }
+             const quint16 priority = (p[0] << 8) | p[1];
+             const quint16 weight = (p[2] << 8) | p[3];
+             const quint16 port = (p[4] << 8) | p[5];
+-            status = local_dn_expand(response, response + responseLength, p + 6, answer, sizeof(answer));
++            status = local_dn_expand(response, responseEnd, p + 6, answer, sizeof(answer));
+             if (status < 0) {
+                 reply->error = QDnsLookup::InvalidReplyError;
+                 reply->errorString = tr("Invalid service record");
+diff -ruN qt-src-pristine/qtbase/src/network/ssl/qasn1element.cpp qt-src-patched/qtbase/src/network/ssl/qasn1element.cpp
+--- qt-src-pristine/qtbase/src/network/ssl/qasn1element.cpp	2017-09-06 13:13:54
++++ qt-src-patched/qtbase/src/network/ssl/qasn1element.cpp	2026-08-10 13:38:23
+@@ -110,6 +110,17 @@
+         length = (first & 0x7f);
+     }
+ 
++    // Reject malformed or oversized length declarations before we allocate,
++    // so that a crafted certificate declaring a length larger than the data
++    // actually available on the stream cannot trigger a heap buffer overflow
++    // through QByteArray::resize().
++    if (length < 0 || stream.status() != QDataStream::Ok)
++        return false;
++    if (QIODevice *dev = stream.device()) {
++        if (length > dev->bytesAvailable())
++            return false;
++    }
++
+     // value
+     QByteArray tmpValue;
+     tmpValue.resize(length);
+diff -ruN qt-src-pristine/qtbase/src/network/ssl/qssl.h qt-src-patched/qtbase/src/network/ssl/qssl.h
+--- qt-src-pristine/qtbase/src/network/ssl/qssl.h	2017-09-06 13:13:54
++++ qt-src-patched/qtbase/src/network/ssl/qssl.h	2026-08-10 13:38:23
+@@ -61,7 +61,8 @@
+ 
+     enum AlternativeNameEntryType {
+         EmailEntry,
+-        DnsEntry
++        DnsEntry,
++        IpAddressEntry
+     };
+ 
+ #if QT_DEPRECATED_SINCE(5,0)
+diff -ruN qt-src-pristine/qtbase/src/network/ssl/qsslcertificate_openssl.cpp qt-src-patched/qtbase/src/network/ssl/qsslcertificate_openssl.cpp
+--- qt-src-pristine/qtbase/src/network/ssl/qsslcertificate_openssl.cpp	2017-09-06 13:13:54
++++ qt-src-patched/qtbase/src/network/ssl/qsslcertificate_openssl.cpp	2026-08-10 13:38:23
+@@ -37,6 +37,7 @@
+ #include "qsslkey_p.h"
+ #include "qsslcertificateextension_p.h"
+ 
++#include <QtNetwork/qhostaddress.h>
+ #include <QtCore/private/qmutexpool_p.h>
+ 
+ QT_BEGIN_NAMESPACE
+@@ -58,9 +59,16 @@
+ uint qHash(const QSslCertificate &key, uint seed) Q_DECL_NOTHROW
+ {
+     if (X509 * const x509 = key.d->x509) {
++#if OPENSSL_VERSION_NUMBER >= 0x10100000L
++        unsigned char sha1Hash[SHA_DIGEST_LENGTH];
++        unsigned int sha1HashLen = SHA_DIGEST_LENGTH;
++        X509_digest(x509, EVP_sha1(), sha1Hash, &sha1HashLen);
++        return qHashBits(sha1Hash, sha1HashLen, seed);
++#else
+         (void)q_X509_cmp(x509, x509); // populate x509->sha1_hash
+                                       // (if someone knows a better way...)
+         return qHashBits(x509->sha1_hash, SHA_DIGEST_LENGTH, seed);
++#endif
+     } else {
+         return seed;
+     }
+@@ -84,7 +92,11 @@
+     QMutexLocker lock(QMutexPool::globalInstanceGet(d.data()));
+     if (d->versionString.isEmpty() && d->x509)
+         d->versionString =
++#if OPENSSL_VERSION_NUMBER >= 0x10100000L
++            QByteArray::number(qlonglong(X509_get_version(d->x509)) + 1);
++#else
+             QByteArray::number(qlonglong(q_ASN1_INTEGER_get(d->x509->cert_info->version)) + 1);
++#endif
+ 
+     return d->versionString;
+ }
+@@ -93,11 +105,15 @@
+ {
+     QMutexLocker lock(QMutexPool::globalInstanceGet(d.data()));
+     if (d->serialNumberString.isEmpty() && d->x509) {
++#if OPENSSL_VERSION_NUMBER >= 0x10100000L
++        ASN1_INTEGER *serialNumber = X509_get_serialNumber(d->x509);
++#else
+         ASN1_INTEGER *serialNumber = d->x509->cert_info->serialNumber;
++#endif
+         QByteArray hexString;
+-        hexString.reserve(serialNumber->length * 3);
+-        for (int a = 0; a < serialNumber->length; ++a) {
+-            hexString += QByteArray::number(serialNumber->data[a], 16).rightJustified(2, '0');
++        hexString.reserve(q_ASN1_STRING_length(serialNumber) * 3);
++        for (int a = 0; a < q_ASN1_STRING_length(serialNumber); ++a) {
++            hexString += QByteArray::number(q_ASN1_STRING_data(serialNumber)[a], 16).rightJustified(2, '0');
+             hexString += ':';
+         }
+         hexString.chop(1);
+@@ -184,7 +200,7 @@
+     if (altNames) {
+         for (int i = 0; i < q_sk_GENERAL_NAME_num(altNames); ++i) {
+             const GENERAL_NAME *genName = q_sk_GENERAL_NAME_value(altNames, i);
+-            if (genName->type != GEN_DNS && genName->type != GEN_EMAIL)
++            if (genName->type != GEN_DNS && genName->type != GEN_EMAIL && genName->type != GEN_IPADD)
+                 continue;
+ 
+             int len = q_ASN1_STRING_length(genName->d.ia5);
+@@ -193,12 +209,28 @@
+                 continue;
+             }
+ 
+-            const char *altNameStr = reinterpret_cast<const char *>(q_ASN1_STRING_data(genName->d.ia5));
+-            const QString altName = QString::fromLatin1(altNameStr, len);
+-            if (genName->type == GEN_DNS)
+-                result.insert(QSsl::DnsEntry, altName);
+-            else if (genName->type == GEN_EMAIL)
+-                result.insert(QSsl::EmailEntry, altName);
++            const unsigned char *bytes = q_ASN1_STRING_data(genName->d.ia5);
++            if (genName->type == GEN_DNS) {
++                result.insert(QSsl::DnsEntry,
++                              QString::fromLatin1(reinterpret_cast<const char *>(bytes), len));
++            } else if (genName->type == GEN_EMAIL) {
++                result.insert(QSsl::EmailEntry,
++                              QString::fromLatin1(reinterpret_cast<const char *>(bytes), len));
++            } else if (genName->type == GEN_IPADD) {
++                // RFC 5280 s.4.2.1.6: iPAddress is an OCTET STRING of
++                // exactly 4 (IPv4) or 16 (IPv6) network-order octets.
++                // Reject any other length so we do not surface bogus
++                // "IP addresses" to callers.
++                QHostAddress address;
++                if (len == 4) {
++                    address = QHostAddress((quint32(bytes[0]) << 24) | (quint32(bytes[1]) << 16)
++                                           | (quint32(bytes[2]) << 8)  |  quint32(bytes[3]));
++                } else if (len == 16) {
++                    address = QHostAddress(bytes);
++                }
++                if (!address.isNull())
++                    result.insert(QSsl::IpAddressEntry, address.toString());
++            }
+         }
+         q_sk_pop_free((STACK*)altNames, reinterpret_cast<void(*)(void*)>(q_sk_free));
+     }
+@@ -229,29 +261,39 @@
+     QSslKey key;
+ 
+     key.d->type = QSsl::PublicKey;
++#if OPENSSL_VERSION_NUMBER >= 0x10100000L
++    EVP_PKEY *pkey = X509_get_pubkey(d->x509);
++#else
+     X509_PUBKEY *xkey = d->x509->cert_info->key;
+     EVP_PKEY *pkey = q_X509_PUBKEY_get(xkey);
++#endif
+     Q_ASSERT(pkey);
+ 
+-    if (q_EVP_PKEY_type(pkey->type) == EVP_PKEY_RSA) {
++#if OPENSSL_VERSION_NUMBER >= 0x10100000L
++#  define _q_EVP_PKEY_type_id(pk) EVP_PKEY_base_id(pk)
++#else
++#  define _q_EVP_PKEY_type_id(pk) q_EVP_PKEY_type((pk)->type)
++#endif
++    if (_q_EVP_PKEY_type_id(pkey) == EVP_PKEY_RSA) {
+         key.d->rsa = q_EVP_PKEY_get1_RSA(pkey);
+         key.d->algorithm = QSsl::Rsa;
+         key.d->isNull = false;
+-    } else if (q_EVP_PKEY_type(pkey->type) == EVP_PKEY_DSA) {
++    } else if (_q_EVP_PKEY_type_id(pkey) == EVP_PKEY_DSA) {
+         key.d->dsa = q_EVP_PKEY_get1_DSA(pkey);
+         key.d->algorithm = QSsl::Dsa;
+         key.d->isNull = false;
+ #ifndef OPENSSL_NO_EC
+-    } else if (q_EVP_PKEY_type(pkey->type) == EVP_PKEY_EC) {
++    } else if (_q_EVP_PKEY_type_id(pkey) == EVP_PKEY_EC) {
+         key.d->ec = q_EVP_PKEY_get1_EC_KEY(pkey);
+         key.d->algorithm = QSsl::Ec;
+         key.d->isNull = false;
+ #endif
+-    } else if (q_EVP_PKEY_type(pkey->type) == EVP_PKEY_DH) {
++    } else if (_q_EVP_PKEY_type_id(pkey) == EVP_PKEY_DH) {
+         // DH unsupported
+     } else {
+         // error?
+     }
++#undef _q_EVP_PKEY_type_id
+ 
+     q_EVP_PKEY_free(pkey);
+     return key;
+diff -ruN qt-src-pristine/qtbase/src/network/ssl/qsslcertificate_qt.cpp qt-src-patched/qtbase/src/network/ssl/qsslcertificate_qt.cpp
+--- qt-src-pristine/qtbase/src/network/ssl/qsslcertificate_qt.cpp	2017-09-06 13:13:54
++++ qt-src-patched/qtbase/src/network/ssl/qsslcertificate_qt.cpp	2026-08-10 13:38:23
+@@ -42,6 +42,7 @@
+ #include "qasn1element_p.h"
+ 
+ #include <QtCore/qdatastream.h>
++#include <QtNetwork/qhostaddress.h>
+ 
+ QT_BEGIN_NAMESPACE
+ 
+@@ -160,6 +161,9 @@
+ 
+ QByteArray QSslCertificate::toPem() const
+ {
++    if (d->null)
++        return QByteArray();
++
+     QByteArray array = toDer();
+ 
+     // Convert to Base64 - wrap at 64 characters.
+@@ -398,6 +402,20 @@
+                                     subjectAlternativeNames.insert(QSsl::EmailEntry, nameElem.toString());
+                                 } else if (nameElem.type() == QAsn1Element::DnsNameType) {
+                                     subjectAlternativeNames.insert(QSsl::DnsEntry, nameElem.toString());
++                                } else if (nameElem.type() == 0x87 /* [7] iPAddress OCTET STRING */) {
++                                    // RFC 5280 s.4.2.1.6: iPAddress is 4 (IPv4) or 16 (IPv6)
++                                    // network-byte-order octets.  Reject any other length.
++                                    const QByteArray &raw = nameElem.value();
++                                    QHostAddress address;
++                                    if (raw.size() == 4) {
++                                        const uchar *b = reinterpret_cast<const uchar *>(raw.constData());
++                                        address = QHostAddress((quint32(b[0]) << 24) | (quint32(b[1]) << 16)
++                                                               | (quint32(b[2]) << 8)  |  quint32(b[3]));
++                                    } else if (raw.size() == 16) {
++                                        address = QHostAddress(reinterpret_cast<const quint8 *>(raw.constData()));
++                                    }
++                                    if (!address.isNull())
++                                        subjectAlternativeNames.insert(QSsl::IpAddressEntry, address.toString());
+                                 }
+                             }
+                         }
+diff -ruN qt-src-pristine/qtbase/src/network/ssl/qsslcontext_openssl.cpp qt-src-patched/qtbase/src/network/ssl/qsslcontext_openssl.cpp
+--- qt-src-pristine/qtbase/src/network/ssl/qsslcontext_openssl.cpp	2017-09-06 13:13:54
++++ qt-src-patched/qtbase/src/network/ssl/qsslcontext_openssl.cpp	2026-08-10 13:38:23
+@@ -104,7 +104,7 @@
+ init_context:
+     switch (sslContext->sslConfiguration.protocol()) {
+     case QSsl::SslV2:
+-#ifndef OPENSSL_NO_SSL2
++#if !defined(OPENSSL_NO_SSL2) && OPENSSL_VERSION_NUMBER < 0x10100000L
+         sslContext->ctx = q_SSL_CTX_new(client ? q_SSLv2_client_method() : q_SSLv2_server_method());
+ #else
+         // SSL 2 not supported by the system, but chosen deliberately -> error
+@@ -324,7 +324,7 @@
+     q_DH_free(dh);
+ 
+ #ifndef OPENSSL_NO_EC
+-#if OPENSSL_VERSION_NUMBER >= 0x10002000L
++#if OPENSSL_VERSION_NUMBER >= 0x10002000L && OPENSSL_VERSION_NUMBER < 0x10100000L
+     if (q_SSLeay() >= 0x10002000L) {
+         q_SSL_CTX_ctrl(sslContext->ctx, SSL_CTRL_SET_ECDH_AUTO, 1, NULL);
+     } else
+@@ -470,7 +470,11 @@
+             unsigned char *data = reinterpret_cast<unsigned char *>(m_sessionASN1.data());
+             if (!q_i2d_SSL_SESSION(session, &data))
+                 qCWarning(lcSsl, "could not store persistent version of SSL session");
++#if OPENSSL_VERSION_NUMBER >= 0x10100000L
++            m_sessionTicketLifeTimeHint = SSL_SESSION_get_ticket_lifetime_hint(session);
++#else
+             m_sessionTicketLifeTimeHint = session->tlsext_tick_lifetime_hint;
++#endif
+         }
+     }
+ 
+diff -ruN qt-src-pristine/qtbase/src/network/ssl/qsslkey_openssl.cpp qt-src-patched/qtbase/src/network/ssl/qsslkey_openssl.cpp
+--- qt-src-pristine/qtbase/src/network/ssl/qsslkey_openssl.cpp	2017-09-06 13:13:54
++++ qt-src-patched/qtbase/src/network/ssl/qsslkey_openssl.cpp	2026-08-10 13:38:23
+@@ -78,28 +78,31 @@
+ 
+ bool QSslKeyPrivate::fromEVP_PKEY(EVP_PKEY *pkey)
+ {
+-    if (pkey->type == EVP_PKEY_RSA) {
++#if OPENSSL_VERSION_NUMBER >= 0x10100000L
++#  define _q_EVP_PKEY_type_id(pk) EVP_PKEY_base_id(pk)
++#else
++#  define _q_EVP_PKEY_type_id(pk) (pk)->type
++#endif
++    if (_q_EVP_PKEY_type_id(pkey) == EVP_PKEY_RSA) {
+         isNull = false;
+         algorithm = QSsl::Rsa;
+         type = QSsl::PrivateKey;
+ 
+-        rsa = q_RSA_new();
+-        memcpy(rsa, q_EVP_PKEY_get1_RSA(pkey), sizeof(RSA));
++        rsa = q_EVP_PKEY_get1_RSA(pkey);
+ 
+         return true;
+     }
+-    else if (pkey->type == EVP_PKEY_DSA) {
++    else if (_q_EVP_PKEY_type_id(pkey) == EVP_PKEY_DSA) {
+         isNull = false;
+         algorithm = QSsl::Dsa;
+         type = QSsl::PrivateKey;
+ 
+-        dsa = q_DSA_new();
+-        memcpy(dsa, q_EVP_PKEY_get1_DSA(pkey), sizeof(DSA));
++        dsa = q_EVP_PKEY_get1_DSA(pkey);
+ 
+         return true;
+     }
+ #ifndef OPENSSL_NO_EC
+-    else if (pkey->type == EVP_PKEY_EC) {
++    else if (_q_EVP_PKEY_type_id(pkey) == EVP_PKEY_EC) {
+         isNull = false;
+         algorithm = QSsl::Ec;
+         type = QSsl::PrivateKey;
+@@ -114,6 +117,7 @@
+         // the underlying EVP_PKEY structure. For now, we won't support
+         // this.
+     }
++#undef _q_EVP_PKEY_type_id
+ 
+     return false;
+ }
+@@ -172,8 +176,13 @@
+         return -1;
+ 
+     switch (algorithm) {
++#if OPENSSL_VERSION_NUMBER >= 0x10100000L
++        case QSsl::Rsa: return q_BN_num_bits(RSA_get0_n(rsa));
++        case QSsl::Dsa: { const BIGNUM *p = NULL; DSA_get0_pqg(dsa, &p, NULL, NULL); return q_BN_num_bits(p); }
++#else
+         case QSsl::Rsa: return q_BN_num_bits(rsa->n);
+         case QSsl::Dsa: return q_BN_num_bits(dsa->p);
++#endif
+ #ifndef OPENSSL_NO_EC
+         case QSsl::Ec: return q_EC_GROUP_get_degree(q_EC_KEY_get0_group(ec));
+ #endif
+@@ -267,7 +276,13 @@
+ 
+ static QByteArray doCrypt(QSslKeyPrivate::Cipher cipher, const QByteArray &data, const QByteArray &key, const QByteArray &iv, int enc)
+ {
+-    EVP_CIPHER_CTX ctx;
++#if OPENSSL_VERSION_NUMBER >= 0x10100000L
++    EVP_CIPHER_CTX *ctx = EVP_CIPHER_CTX_new();
++#else
++    EVP_CIPHER_CTX ctxStorage;
++    EVP_CIPHER_CTX *ctx = &ctxStorage;
++    q_EVP_CIPHER_CTX_init(ctx);
++#endif
+     const EVP_CIPHER* type = 0;
+     int i = 0, len = 0;
+ 
+@@ -285,21 +300,24 @@
+ 
+     QByteArray output;
+     output.resize(data.size() + EVP_MAX_BLOCK_LENGTH);
+-    q_EVP_CIPHER_CTX_init(&ctx);
+-    q_EVP_CipherInit(&ctx, type, NULL, NULL, enc);
+-    q_EVP_CIPHER_CTX_set_key_length(&ctx, key.size());
++    q_EVP_CipherInit(ctx, type, NULL, NULL, enc);
++    q_EVP_CIPHER_CTX_set_key_length(ctx, key.size());
+     if (cipher == QSslKeyPrivate::Rc2Cbc)
+-        q_EVP_CIPHER_CTX_ctrl(&ctx, EVP_CTRL_SET_RC2_KEY_BITS, 8 * key.size(), NULL);
+-    q_EVP_CipherInit(&ctx, NULL,
++        q_EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_SET_RC2_KEY_BITS, 8 * key.size(), NULL);
++    q_EVP_CipherInit(ctx, NULL,
+         reinterpret_cast<const unsigned char *>(key.constData()),
+         reinterpret_cast<const unsigned char *>(iv.constData()), enc);
+-    q_EVP_CipherUpdate(&ctx,
++    q_EVP_CipherUpdate(ctx,
+         reinterpret_cast<unsigned char *>(output.data()), &len,
+         reinterpret_cast<const unsigned char *>(data.constData()), data.size());
+-    q_EVP_CipherFinal(&ctx,
++    q_EVP_CipherFinal(ctx,
+         reinterpret_cast<unsigned char *>(output.data()) + len, &i);
+     len += i;
+-    q_EVP_CIPHER_CTX_cleanup(&ctx);
++#if OPENSSL_VERSION_NUMBER >= 0x10100000L
++    EVP_CIPHER_CTX_free(ctx);
++#else
++    q_EVP_CIPHER_CTX_cleanup(ctx);
++#endif
+ 
+     return output.left(len);
+ }
+diff -ruN qt-src-pristine/qtbase/src/network/ssl/qsslkey_qt.cpp qt-src-patched/qtbase/src/network/ssl/qsslkey_qt.cpp
+--- qt-src-pristine/qtbase/src/network/ssl/qsslkey_qt.cpp	2017-09-06 13:13:54
++++ qt-src-patched/qtbase/src/network/ssl/qsslkey_qt.cpp	2026-08-10 13:38:23
+@@ -220,16 +220,19 @@
+         } else if (algorithm == QSsl::Ec) {
+             if (versionHex != "01")
+                 return;
+-            if (items.size() != 4
+-               || items[1].type() != QAsn1Element::OctetStringType
+-               || items[2].type() != QAsn1Element::Context0Type
+-               || items[3].type() != QAsn1Element::Context1Type)
++            // SEC1 ECPrivateKey: SEQUENCE { version=1, OCTET STRING privKey,
++            //   [0] OID curveOid (optional), [1] BIT STRING pubKey (optional) }
++            // When decoded from a PKCS#8 wrapper the curve OID is in the outer
++            // algId SEQUENCE and may be absent here, so accept 2, 3, or 4 items.
++            if (items.size() < 2 || items[1].type() != QAsn1Element::OctetStringType)
+                 return;
+-            QAsn1Element oidElem;
+-            if (!oidElem.read(items[2].value())
+-                || oidElem.type() != QAsn1Element::ObjectIdentifierType)
+-                return;
+-            keyLength = curveBits(oidElem.toObjectId());
++            if (items.size() >= 3 && items[2].type() == QAsn1Element::Context0Type) {
++                QAsn1Element oidElem;
++                if (!oidElem.read(items[2].value())
++                    || oidElem.type() != QAsn1Element::ObjectIdentifierType)
++                    return;
++                keyLength = curveBits(oidElem.toObjectId());
++            }
+         }
+     }
+ 
+@@ -240,6 +243,34 @@
+ void QSslKeyPrivate::decodePem(const QByteArray &pem, const QByteArray &passPhrase,
+                                bool deepClear)
+ {
++    // Handle PKCS#8 unencrypted private key ("-----BEGIN PRIVATE KEY-----").
++    // Qt 5.6.3's pemHeader() for EC keys returns "-----BEGIN EC PRIVATE KEY-----"
++    // (SEC1 format), so derFromPem() can't locate the header for PKCS#8 PEMs.
++    // Unwrap the outer PKCS#8 SEQUENCE to get the inner key DER and fall through
++    // to decodeDer() for decoding.
++    const QByteArray pkcs8Header = QByteArrayLiteral("-----BEGIN PRIVATE KEY-----");
++    const QByteArray pkcs8Footer = QByteArrayLiteral("-----END PRIVATE KEY-----");
++    const int pkcs8HeaderIdx = pem.indexOf(pkcs8Header);
++    if (pkcs8HeaderIdx != -1) {
++        const int pkcs8FooterIdx = pem.indexOf(pkcs8Footer);
++        if (pkcs8FooterIdx != -1) {
++            const QByteArray b64 = pem.mid(pkcs8HeaderIdx + pkcs8Header.size(),
++                                           pkcs8FooterIdx - (pkcs8HeaderIdx + pkcs8Header.size()));
++            const QByteArray pkcs8Der = QByteArray::fromBase64(b64);
++            // PKCS#8: SEQUENCE { INTEGER version, SEQUENCE algId, OCTET STRING keyData }
++            QAsn1Element outer;
++            if (outer.read(pkcs8Der) && outer.type() == QAsn1Element::SequenceType) {
++                const QVector<QAsn1Element> items = outer.toVector();
++                if (items.size() >= 3 && items[2].type() == QAsn1Element::OctetStringType) {
++                    decodeDer(items[2].value(), deepClear);
++                    return;
++                }
++            }
++        }
++        clear(deepClear);
++        return;
++    }
++
+     QMap<QByteArray, QByteArray> headers;
+     QByteArray data = derFromPem(pem, &headers);
+     if (headers.value("Proc-Type") == "4,ENCRYPTED") {
+@@ -275,6 +306,9 @@
+ 
+ QByteArray QSslKeyPrivate::toPem(const QByteArray &passPhrase) const
+ {
++    if (isNull)
++        return QByteArray();
++
+     QByteArray data;
+     QMap<QByteArray, QByteArray> headers;
+ 
+diff -ruN qt-src-pristine/qtbase/src/network/ssl/qsslsocket.cpp qt-src-patched/qtbase/src/network/ssl/qsslsocket.cpp
+--- qt-src-pristine/qtbase/src/network/ssl/qsslsocket.cpp	2017-09-06 13:13:54
++++ qt-src-patched/qtbase/src/network/ssl/qsslsocket.cpp	2026-08-10 13:38:23
+@@ -321,6 +321,7 @@
+ #include <QtCore/qdir.h>
+ #include <QtCore/qmutex.h>
+ #include <QtCore/qelapsedtimer.h>
++#include <QtCore/qurl.h>
+ #include <QtNetwork/qhostaddress.h>
+ #include <QtNetwork/qhostinfo.h>
+ 
+@@ -2020,6 +2021,17 @@
+     , paused(false)
+ {
+     QSslConfigurationPrivate::deepCopyDefaultConfiguration(&configuration);
++    // CVE-2023-34410: deepCopyDefaultConfiguration copies the global default
++    // SSL configuration into this socket's configuration, but the member
++    // allowRootCertOnDemandLoading on QSslSocketPrivate itself is initialised
++    // unconditionally to true in the member-initialiser list above. If the
++    // application has globally disabled on-demand root-certificate loading via
++    // QSslConfiguration::defaultConfiguration().setAllowedNextProtocols({}),
++    // that preference is encoded in the global QSslConfigurationPrivate, not
++    // this socket's QSslConfigurationPrivate. We therefore propagate it
++    // explicitly here.
++    if (!configuration.allowRootCertOnDemandLoading)
++        allowRootCertOnDemandLoading = false;
+ }
+ 
+ /*!
+@@ -2614,18 +2626,45 @@
+ 
+ bool QSslSocketPrivate::isMatchingHostname(const QSslCertificate &cert, const QString &peerName)
+ {
+-    QStringList commonNameList = cert.subjectInfo(QSslCertificate::CommonName);
++    // If the caller passed an IP literal (v4 or v6) then RFC 6125 s.6.4.1
++    // requires that we compare the reference identifier against iPAddress
++    // SAN entries.  Compare as QHostAddress values so that equivalent
++    // textual forms ("::1" and "0:0:0:0:0:0:0:1", trailing dot, etc.)
++    // are all recognised as equal.  If no iPAddress SAN matches we still
++    // fall through to the CN / dNSName loop below for backward
++    // compatibility with certificates that historically embedded the IP
++    // address in the Common Name.
++    QHostAddress peerAddress;
++    if (peerAddress.setAddress(peerName)) {
++        foreach (const QString &sanIp,
++                 cert.subjectAlternativeNames().values(QSsl::IpAddressEntry)) {
++            QHostAddress sanAddress;
++            if (sanAddress.setAddress(sanIp) && sanAddress == peerAddress)
++                return true;
++        }
++    }
+ 
++    // IDN hostnames arrive here as U-label QStrings but the certificate's
++    // dNSName / commonName fields are (per CA/B BR 3.2.2.6) A-labels only.
++    // Normalise the peer name to its ASCII A-label form once so that the
++    // literal string compare inside the inner overload can succeed.  If
++    // toAce yields empty (e.g. the peer name is an IP literal or is
++    // otherwise not a valid domain name) fall back to the lower-cased
++    // peer name so that non-IDN behaviour is preserved.
++    const QByteArray peerAce = QUrl::toAce(peerName);
++    const QString peerReference = peerAce.isEmpty()
++        ? peerName.toLower()
++        : QString::fromLatin1(peerAce);
++
++    QStringList commonNameList = cert.subjectInfo(QSslCertificate::CommonName);
+     foreach (const QString &commonName, commonNameList) {
+-        if (isMatchingHostname(commonName.toLower(), peerName.toLower())) {
++        if (isMatchingHostname(commonName.toLower(), peerReference))
+             return true;
+-        }
+     }
+ 
+     foreach (const QString &altName, cert.subjectAlternativeNames().values(QSsl::DnsEntry)) {
+-        if (isMatchingHostname(altName.toLower(), peerName.toLower())) {
++        if (isMatchingHostname(altName.toLower(), peerReference))
+             return true;
+-        }
+     }
+ 
+     return false;
+diff -ruN qt-src-pristine/qtbase/src/network/ssl/qsslsocket_openssl.cpp qt-src-patched/qtbase/src/network/ssl/qsslsocket_openssl.cpp
+--- qt-src-pristine/qtbase/src/network/ssl/qsslsocket_openssl.cpp	2017-09-06 13:13:54
++++ qt-src-patched/qtbase/src/network/ssl/qsslsocket_openssl.cpp	2026-08-10 13:38:23
+@@ -121,27 +121,35 @@
+         : initLocker(QMutex::Recursive),
+           locksLocker(QMutex::Recursive)
+     {
++#if OPENSSL_VERSION_NUMBER < 0x10100000L
+         QMutexLocker locker(&locksLocker);
+         int numLocks = q_CRYPTO_num_locks();
+         locks = new QMutex *[numLocks];
+         memset(locks, 0, numLocks * sizeof(QMutex *));
++#endif
+     }
+     inline ~QOpenSslLocks()
+     {
++#if OPENSSL_VERSION_NUMBER < 0x10100000L
+         QMutexLocker locker(&locksLocker);
+         for (int i = 0; i < q_CRYPTO_num_locks(); ++i)
+             delete locks[i];
+         delete [] locks;
+-
++#endif
+         QSslSocketPrivate::deinitialize();
+     }
+     inline QMutex *lock(int num)
+     {
++#if OPENSSL_VERSION_NUMBER < 0x10100000L
+         QMutexLocker locker(&locksLocker);
+         QMutex *tmp = locks[num];
+         if (!tmp)
+             tmp = locks[num] = new QMutex(QMutex::Recursive);
+         return tmp;
++#else
++        Q_UNUSED(num);
++        return &locksLocker;
++#endif
+     }
+ 
+     QMutex *globalLock()
+@@ -157,7 +165,9 @@
+ private:
+     QMutex initLocker;
+     QMutex locksLocker;
++#if OPENSSL_VERSION_NUMBER < 0x10100000L
+     QMutex **locks;
++#endif
+ };
+ Q_GLOBAL_STATIC(QOpenSslLocks, openssl_locks)
+ 
+@@ -175,6 +185,7 @@
+ }
+ 
+ extern "C" {
++#if OPENSSL_VERSION_NUMBER < 0x10100000L
+ static void locking_function(int mode, int lockNumber, const char *, int)
+ {
+     QMutex *mutex = openssl_locks()->lock(lockNumber);
+@@ -189,6 +200,7 @@
+ {
+     return (quintptr)QThread::currentThreadId();
+ }
++#endif
+ 
+ #if OPENSSL_VERSION_NUMBER >= 0x10001000L && !defined(OPENSSL_NO_PSK)
+ static unsigned int q_ssl_psk_client_callback(SSL *ssl,
+@@ -447,8 +459,10 @@
+ */
+ void QSslSocketPrivate::deinitialize()
+ {
++#if OPENSSL_VERSION_NUMBER < 0x10100000L
+     q_CRYPTO_set_id_callback(0);
+     q_CRYPTO_set_locking_callback(0);
++#endif
+     q_ERR_free_strings();
+ }
+ 
+@@ -476,8 +490,10 @@
+         s_libraryLoaded = true;
+ 
+         // Initialize OpenSSL.
++#if OPENSSL_VERSION_NUMBER < 0x10100000L
+         q_CRYPTO_set_id_callback(id_function);
+         q_CRYPTO_set_locking_callback(locking_function);
++#endif
+         if (q_SSL_library_init() != 1)
+             return false;
+         q_SSL_load_error_strings();
+@@ -1500,8 +1516,30 @@
+ {
+     if (ssl) {
+         if (!shutdown) {
+-            q_SSL_shutdown(ssl);
++            // SSL_shutdown returns 1 for a completed bidirectional close,
++            // 0 for a "close_notify sent but peer has not responded yet",
++            // and <0 for a fatal error whose reason must be fetched via
++            // SSL_get_error.  Historically the return value was ignored,
++            // so a fatal error (peer already gone, socket write failure,
++            // protocol error) was silently followed by a transmit() call
++            // that would iterate the SSL state machine against a broken
++            // context.  Capture the return value, log any fatal error,
++            // and skip the follow-up transmit when the context is
++            // unusable.  WANT_READ / WANT_WRITE remain fall-through
++            // because they are transient pump-again conditions.
++            const int shutdownResult = q_SSL_shutdown(ssl);
+             shutdown = true;
++            if (shutdownResult < 0) {
++                const int sslError = q_SSL_get_error(ssl, shutdownResult);
++                if (sslError != SSL_ERROR_WANT_READ && sslError != SSL_ERROR_WANT_WRITE) {
++                    qCWarning(lcSsl,
++                              "QSslSocket: SSL_shutdown returned %d, error %d: %s",
++                              shutdownResult, sslError,
++                              qPrintable(getErrorsFromOpenSsl()));
++                    plainSocket->disconnectFromHost();
++                    return;
++                }
++            }
+             transmit();
+         }
+     }
+@@ -1567,7 +1605,11 @@
+     if (readBufferMaxSize)
+         plainSocket->setReadBufferSize(readBufferMaxSize);
+ 
++#if OPENSSL_VERSION_NUMBER >= 0x10100000L
++    if (SSL_session_reused(ssl))
++#else
+     if (q_SSL_ctrl((ssl), SSL_CTRL_GET_SESSION_REUSED, 0, NULL))
++#endif
+         configuration.peerSessionShared = true;
+ 
+ #ifdef QT_DECRYPT_SSL_TRAFFIC
+diff -ruN qt-src-pristine/qtbase/src/network/ssl/qsslsocket_openssl_symbols.cpp qt-src-patched/qtbase/src/network/ssl/qsslsocket_openssl_symbols.cpp
+--- qt-src-pristine/qtbase/src/network/ssl/qsslsocket_openssl_symbols.cpp	2017-09-06 13:13:54
++++ qt-src-patched/qtbase/src/network/ssl/qsslsocket_openssl_symbols.cpp	2026-08-10 13:38:23
+@@ -139,20 +139,32 @@
+ DEFINEFUNC2(int, ASN1_STRING_to_UTF8, unsigned char **a, a, ASN1_STRING *b, b, return 0, return);
+ DEFINEFUNC4(long, BIO_ctrl, BIO *a, a, int b, b, long c, c, void *d, d, return -1, return)
+ DEFINEFUNC(int, BIO_free, BIO *a, a, return 0, return)
++#if OPENSSL_VERSION_NUMBER >= 0x10100000L
++DEFINEFUNC(BIO *, BIO_new, const BIO_METHOD *a, a, return 0, return)
++#else
+ DEFINEFUNC(BIO *, BIO_new, BIO_METHOD *a, a, return 0, return)
++#endif
+ DEFINEFUNC2(BIO *, BIO_new_mem_buf, void *a, a, int b, b, return 0, return)
+ DEFINEFUNC3(int, BIO_read, BIO *a, a, void *b, b, int c, c, return -1, return)
++#if OPENSSL_VERSION_NUMBER >= 0x10100000L
++DEFINEFUNC(const BIO_METHOD *, BIO_s_mem, void, DUMMYARG, return 0, return)
++#else
+ DEFINEFUNC(BIO_METHOD *, BIO_s_mem, void, DUMMYARG, return 0, return)
++#endif
+ DEFINEFUNC3(int, BIO_write, BIO *a, a, const void *b, b, int c, c, return -1, return)
+ DEFINEFUNC(int, BN_num_bits, const BIGNUM *a, a, return 0, return)
+ #ifndef OPENSSL_NO_EC
+ DEFINEFUNC(const EC_GROUP*, EC_KEY_get0_group, const EC_KEY* k, k, return 0, return)
+ DEFINEFUNC(int, EC_GROUP_get_degree, const EC_GROUP* g, g, return 0, return)
+ #endif
++#if OPENSSL_VERSION_NUMBER < 0x10100000L
+ DEFINEFUNC(int, CRYPTO_num_locks, DUMMYARG, DUMMYARG, return 0, return)
+ DEFINEFUNC(void, CRYPTO_set_locking_callback, void (*a)(int, int, const char *, int), a, return, DUMMYARG)
+ DEFINEFUNC(void, CRYPTO_set_id_callback, unsigned long (*a)(), a, return, DUMMYARG)
++#endif
++#if OPENSSL_VERSION_NUMBER < 0x10100000L
+ DEFINEFUNC(void, CRYPTO_free, void *a, a, return, DUMMYARG)
++#endif
+ DEFINEFUNC(DSA *, DSA_new, DUMMYARG, DUMMYARG, return 0, return)
+ DEFINEFUNC(void, DSA_free, DSA *a, a, return, DUMMYARG)
+ DEFINEFUNC3(X509 *, d2i_X509, X509 **a, a, const unsigned char **b, b, long c, c, return 0, return)
+@@ -296,7 +308,7 @@
+ DEFINEFUNC2(void, SSL_set_psk_client_callback, SSL* ssl, ssl, q_psk_client_callback_t callback, callback, return, DUMMYARG)
+ #endif
+ #if OPENSSL_VERSION_NUMBER >= 0x10000000L
+-#ifndef OPENSSL_NO_SSL2
++#if !defined(OPENSSL_NO_SSL2) && OPENSSL_VERSION_NUMBER < 0x10100000L
+ DEFINEFUNC(const SSL_METHOD *, SSLv2_client_method, DUMMYARG, DUMMYARG, return 0, return)
+ #endif
+ #ifndef OPENSSL_NO_SSL3_METHOD
+@@ -308,7 +320,7 @@
+ DEFINEFUNC(const SSL_METHOD *, TLSv1_1_client_method, DUMMYARG, DUMMYARG, return 0, return)
+ DEFINEFUNC(const SSL_METHOD *, TLSv1_2_client_method, DUMMYARG, DUMMYARG, return 0, return)
+ #endif
+-#ifndef OPENSSL_NO_SSL2
++#if !defined(OPENSSL_NO_SSL2) && OPENSSL_VERSION_NUMBER < 0x10100000L
+ DEFINEFUNC(const SSL_METHOD *, SSLv2_server_method, DUMMYARG, DUMMYARG, return 0, return)
+ #endif
+ #ifndef OPENSSL_NO_SSL3_METHOD
+@@ -762,10 +774,12 @@
+     RESOLVEFUNC(EC_GROUP_get_degree)
+ #endif
+     RESOLVEFUNC(BN_num_bits)
++#if OPENSSL_VERSION_NUMBER < 0x10100000L
+     RESOLVEFUNC(CRYPTO_free)
+     RESOLVEFUNC(CRYPTO_num_locks)
+     RESOLVEFUNC(CRYPTO_set_id_callback)
+     RESOLVEFUNC(CRYPTO_set_locking_callback)
++#endif
+     RESOLVEFUNC(DSA_new)
+     RESOLVEFUNC(DSA_free)
+     RESOLVEFUNC(ERR_error_string)
+diff -ruN qt-src-pristine/qtbase/src/network/ssl/qsslsocket_openssl_symbols_p.h qt-src-patched/qtbase/src/network/ssl/qsslsocket_openssl_symbols_p.h
+--- qt-src-pristine/qtbase/src/network/ssl/qsslsocket_openssl_symbols_p.h	2017-09-06 13:13:54
++++ qt-src-patched/qtbase/src/network/ssl/qsslsocket_openssl_symbols_p.h	2026-08-10 13:38:23
+@@ -215,20 +215,34 @@
+ int q_ASN1_STRING_to_UTF8(unsigned char **a, ASN1_STRING *b);
+ long q_BIO_ctrl(BIO *a, int b, long c, void *d);
+ int q_BIO_free(BIO *a);
++#if OPENSSL_VERSION_NUMBER >= 0x10100000L
++BIO *q_BIO_new(const BIO_METHOD *a);
++#else
+ BIO *q_BIO_new(BIO_METHOD *a);
++#endif
+ BIO *q_BIO_new_mem_buf(void *a, int b);
+ int q_BIO_read(BIO *a, void *b, int c);
++#if OPENSSL_VERSION_NUMBER >= 0x10100000L
++const BIO_METHOD *q_BIO_s_mem();
++#else
+ BIO_METHOD *q_BIO_s_mem();
++#endif
+ int q_BIO_write(BIO *a, const void *b, int c);
+ int q_BN_num_bits(const BIGNUM *a);
+ #ifndef OPENSSL_NO_EC
+ const EC_GROUP* q_EC_KEY_get0_group(const EC_KEY* k);
+ int q_EC_GROUP_get_degree(const EC_GROUP* g);
+ #endif
++#if OPENSSL_VERSION_NUMBER < 0x10100000L
+ int q_CRYPTO_num_locks();
+ void q_CRYPTO_set_locking_callback(void (*a)(int, int, const char *, int));
+ void q_CRYPTO_set_id_callback(unsigned long (*a)());
++#endif
++#if OPENSSL_VERSION_NUMBER >= 0x10100000L
++#define q_CRYPTO_free(a) CRYPTO_free(a, __FILE__, __LINE__)
++#else
+ void q_CRYPTO_free(void *a);
++#endif
+ DSA *q_DSA_new();
+ void q_DSA_free(DSA *a);
+ X509 *q_d2i_X509(X509 **a, const unsigned char **b, long c);
+@@ -373,7 +387,9 @@
+ #endif // OPENSSL_VERSION_NUMBER >= 0x10001000L && !defined(OPENSSL_NO_PSK)
+ #if OPENSSL_VERSION_NUMBER >= 0x10000000L
+ #ifndef OPENSSL_NO_SSL2
++#  if OPENSSL_VERSION_NUMBER < 0x10100000L
+ const SSL_METHOD *q_SSLv2_client_method();
++#  endif
+ #endif
+ #ifndef OPENSSL_NO_SSL3_METHOD
+ const SSL_METHOD *q_SSLv3_client_method();
+@@ -383,7 +399,9 @@
+ const SSL_METHOD *q_TLSv1_1_client_method();
+ const SSL_METHOD *q_TLSv1_2_client_method();
+ #ifndef OPENSSL_NO_SSL2
++#  if OPENSSL_VERSION_NUMBER < 0x10100000L
+ const SSL_METHOD *q_SSLv2_server_method();
++#  endif
+ #endif
+ #ifndef OPENSSL_NO_SSL3_METHOD
+ const SSL_METHOD *q_SSLv3_server_method();
+@@ -394,7 +412,9 @@
+ const SSL_METHOD *q_TLSv1_2_server_method();
+ #else
+ #ifndef OPENSSL_NO_SSL2
++#  if OPENSSL_VERSION_NUMBER < 0x10100000L
+ SSL_METHOD *q_SSLv2_client_method();
++#  endif
+ #endif
+ #ifndef OPENSSL_NO_SSL3_METHOD
+ SSL_METHOD *q_SSLv3_client_method();
+@@ -404,7 +424,9 @@
+ SSL_METHOD *q_TLSv1_1_client_method();
+ SSL_METHOD *q_TLSv1_2_client_method();
+ #ifndef OPENSSL_NO_SSL2
++#  if OPENSSL_VERSION_NUMBER < 0x10100000L
+ SSL_METHOD *q_SSLv2_server_method();
++#  endif
+ #endif
+ #ifndef OPENSSL_NO_SSL3_METHOD
+ SSL_METHOD *q_SSLv3_server_method();
+@@ -510,7 +532,11 @@
+         PEM_ASN1_write_bio((int (*)(void*, unsigned char**))q_i2d_DSAPrivateKey,PEM_STRING_DSA,\
+                            bp,(char *)x,enc,kstr,klen,cb,u)
+ #endif
++#if OPENSSL_VERSION_NUMBER >= 0x10100000L
++#define q_SSL_CTX_set_options(ctx,op) SSL_CTX_set_options(ctx,op)
++#else
+ #define q_SSL_CTX_set_options(ctx,op) q_SSL_CTX_ctrl((ctx),SSL_CTRL_OPTIONS,(op),NULL)
++#endif
+ #define q_SSL_CTX_set_mode(ctx,op) q_SSL_CTX_ctrl((ctx),SSL_CTRL_MODE,(op),NULL)
+ #define q_SKM_sk_num(type, st) ((int (*)(const STACK_OF(type) *))q_sk_num)(st)
+ #define q_SKM_sk_value(type, st,i) ((type * (*)(const STACK_OF(type) *, int))q_sk_value)(st, i)
+diff -ruN qt-src-pristine/qtbase/src/platformsupport/cglconvenience/cglconvenience.mm qt-src-patched/qtbase/src/platformsupport/cglconvenience/cglconvenience.mm
+--- qt-src-pristine/qtbase/src/platformsupport/cglconvenience/cglconvenience.mm	2017-09-06 13:13:54
++++ qt-src-patched/qtbase/src/platformsupport/cglconvenience/cglconvenience.mm	2026-08-10 13:38:23
+@@ -88,12 +88,24 @@
+         attrs.append(NSOpenGLPFATripleBuffer);
+ 
+ #if MAC_OS_X_VERSION_MAX_ALLOWED >= MAC_OS_X_VERSION_10_7
+-    if (QSysInfo::MacintoshVersion >= QSysInfo::MV_10_7) {
++    // Note: QSysInfo::MacintoshVersion returns MV_Unknown (0) for macOS 11+ because
++    // Q_MV_OSX only handles major == 10. The compile-time SDK guard above is sufficient —
++    // if we built with SDK >= 10.7, NSOpenGLPFAOpenGLProfile is available at runtime.
++    {
+         if (format.profile() == QSurfaceFormat::CoreProfile
+                 && ((format.majorVersion() == 3 && format.minorVersion() >= 2)
+                     || format.majorVersion() > 3)) {
+             attrs << NSOpenGLPFAOpenGLProfile;
++#if MAC_OS_X_VERSION_MAX_ALLOWED >= MAC_OS_X_VERSION_10_9
++            // NSOpenGLProfileVersion4_1Core available since macOS 10.9.
++            // Use it explicitly when version >= 4.x is requested.
++            if (format.majorVersion() >= 4)
++                attrs << NSOpenGLProfileVersion4_1Core;
++            else
++                attrs << NSOpenGLProfileVersion3_2Core;
++#else
+             attrs << NSOpenGLProfileVersion3_2Core;
++#endif
+         } else {
+             attrs << NSOpenGLPFAOpenGLProfile;
+             attrs << NSOpenGLProfileVersionLegacy;
+diff -ruN qt-src-pristine/qtbase/src/platformsupport/fontdatabases/mac/qfontengine_coretext.mm qt-src-patched/qtbase/src/platformsupport/fontdatabases/mac/qfontengine_coretext.mm
+--- qt-src-pristine/qtbase/src/platformsupport/fontdatabases/mac/qfontengine_coretext.mm	2017-09-06 13:13:54
++++ qt-src-patched/qtbase/src/platformsupport/fontdatabases/mac/qfontengine_coretext.mm	2026-08-10 13:38:23
+@@ -764,7 +764,7 @@
+ 
+ QFixed QCoreTextFontEngine::emSquareSize() const
+ {
+-    return QFixed::QFixed(int(CTFontGetUnitsPerEm(ctfont)));
++    return QFixed(int(CTFontGetUnitsPerEm(ctfont)));
+ }
+ 
+ QFontEngine *QCoreTextFontEngine::cloneWithSize(qreal pixelSize) const
+diff -ruN qt-src-pristine/qtbase/src/plugins/platforms/cocoa/cocoa.pro qt-src-patched/qtbase/src/plugins/platforms/cocoa/cocoa.pro
+--- qt-src-pristine/qtbase/src/plugins/platforms/cocoa/cocoa.pro	2017-09-06 13:13:54
++++ qt-src-patched/qtbase/src/plugins/platforms/cocoa/cocoa.pro	2026-08-10 13:38:23
+@@ -79,7 +79,7 @@
+ 
+ RESOURCES += qcocoaresources.qrc
+ 
+-LIBS += -framework Cocoa -framework Carbon -framework IOKit -lcups
++LIBS += -framework Cocoa -framework Carbon -framework IOKit -framework QuartzCore -framework IOSurface -lcups
+ 
+ QT += core-private gui-private platformsupport-private
+ 
+diff -ruN qt-src-pristine/qtbase/src/plugins/platforms/cocoa/qcocoaapplicationdelegate.mm qt-src-patched/qtbase/src/plugins/platforms/cocoa/qcocoaapplicationdelegate.mm
+--- qt-src-pristine/qtbase/src/plugins/platforms/cocoa/qcocoaapplicationdelegate.mm	2017-09-06 13:13:54
++++ qt-src-patched/qtbase/src/plugins/platforms/cocoa/qcocoaapplicationdelegate.mm	2026-08-10 13:38:23
+@@ -366,6 +366,14 @@
+         && [reflectionDelegate respondsToSelector:@selector(applicationDidResignActive:)])
+         [reflectionDelegate applicationDidResignActive:notification];
+ 
++    // On macOS 10.14+ (and macOS 26/Tahoe), focus cycling between an app's own windows
++    // (e.g. between the main window and a panel/tool window) causes applicationDidResignActive
++    // to fire even though the application itself is still the frontmost app.
++    // Guard with [NSApp isActive] to suppress these spurious ApplicationInactive events,
++    // which otherwise block input and cause automated test failures.
++    if ([NSApp isActive])
++        return;
++
+     QWindowSystemInterface::handleApplicationStateChanged(Qt::ApplicationInactive);
+ /*
+     onApplicationChangedActivation(false);
+diff -ruN qt-src-pristine/qtbase/src/plugins/platforms/cocoa/qcocoaglcontext.h qt-src-patched/qtbase/src/plugins/platforms/cocoa/qcocoaglcontext.h
+--- qt-src-pristine/qtbase/src/plugins/platforms/cocoa/qcocoaglcontext.h	2017-09-06 13:13:54
++++ qt-src-patched/qtbase/src/plugins/platforms/cocoa/qcocoaglcontext.h	2026-08-10 13:38:23
+@@ -56,6 +56,7 @@
+ 
+     bool makeCurrent(QPlatformSurface *surface) Q_DECL_OVERRIDE;
+     void doneCurrent() Q_DECL_OVERRIDE;
++    GLuint defaultFramebufferObject(QPlatformSurface *surface) const Q_DECL_OVERRIDE;
+ 
+     void (*getProcAddress(const QByteArray &procName)) () Q_DECL_OVERRIDE;
+ 
+diff -ruN qt-src-pristine/qtbase/src/plugins/platforms/cocoa/qcocoaglcontext.mm qt-src-patched/qtbase/src/plugins/platforms/cocoa/qcocoaglcontext.mm
+--- qt-src-pristine/qtbase/src/plugins/platforms/cocoa/qcocoaglcontext.mm	2017-09-06 13:13:54
++++ qt-src-patched/qtbase/src/plugins/platforms/cocoa/qcocoaglcontext.mm	2026-08-10 13:38:23
+@@ -40,6 +40,92 @@
+ #include <QtPlatformHeaders/qcocoanativecontext.h>
+ 
+ #import <Cocoa/Cocoa.h>
++#import <QuartzCore/QuartzCore.h>
++#include <IOSurface/IOSurface.h>
++#include <OpenGL/CGLIOSurface.h>
++// macOS 26 (Tahoe): NSOpenGLContext.setView: was removed, so the CGL context
++// has no window-system drawable. The fix: use an IOSurface-backed FBO as the
++// surrogate "default FBO". After each swapBuffers the IOSurface is set as the
++// CALayer contents of the NSView, compositing the rendered frame to screen.
++// Qt's QOpenGLFunctions::glBindFramebuffer() redirects FBO-0 binds to
++// defaultFramebufferObject() when it returns non-zero, so the app's rendering
++// flows into this IOSurface FBO automatically.
++#include <map>
++struct macOS26FBOEntry {
++    GLuint fbo      = 0;
++    GLuint texture  = 0;
++    GLuint depthRB  = 0;
++    IOSurfaceRef ioSurface = nullptr;
++    int width  = 0;
++    int height = 0;
++};
++static std::map<void*, macOS26FBOEntry> s_macOS26FBOs;
++static void macOS26_destroyEntry(macOS26FBOEntry &e)
++{
++    if (e.fbo)       { glDeleteFramebuffers(1,  &e.fbo);      e.fbo      = 0; }
++    if (e.texture)   { glDeleteTextures(1,      &e.texture);  e.texture  = 0; }
++    if (e.depthRB)   { glDeleteRenderbuffers(1, &e.depthRB);  e.depthRB  = 0; }
++    if (e.ioSurface) { CFRelease(e.ioSurface);                e.ioSurface = nullptr; }
++    e.width = e.height = 0;
++}
++// Must be called while the CGL context is current.
++// Returns the surrogate FBO ID, which is left BOUND on return.
++static GLuint macOS26_getOrCreateFBO(CGLContextObj ctx, int width, int height)
++{
++    auto it = s_macOS26FBOs.find(ctx);
++    if (it != s_macOS26FBOs.end()) {
++        if (it->second.width == width && it->second.height == height) {
++            glBindFramebuffer(GL_FRAMEBUFFER, it->second.fbo);
++            return it->second.fbo;
++        }
++        // Size changed: tear down and recreate.
++        macOS26_destroyEntry(it->second);
++        s_macOS26FBOs.erase(it);
++    }
++    // Create an IOSurface (32-bit BGRA = kCVPixelFormatType_32BGRA = 'BGRA').
++    const uint32_t fmtBGRA = 0x42475241u;
++    NSDictionary *props = @{
++        (NSString *)kIOSurfaceWidth:           @(width),
++        (NSString *)kIOSurfaceHeight:          @(height),
++        (NSString *)kIOSurfaceBytesPerElement: @(4),
++        (NSString *)kIOSurfacePixelFormat:     @(fmtBGRA),
++    };
++    IOSurfaceRef ioSurface = IOSurfaceCreate((__bridge CFDictionaryRef)props);
++    // Bind the IOSurface to a GL_TEXTURE_RECTANGLE texture (no mip-maps, integer coords).
++    GLuint texture = 0;
++    glGenTextures(1, &texture);
++    glBindTexture(GL_TEXTURE_RECTANGLE, texture);
++    CGLTexImageIOSurface2D(ctx, GL_TEXTURE_RECTANGLE, GL_RGBA,
++                           width, height, GL_BGRA, GL_UNSIGNED_INT_8_8_8_8_REV,
++                           ioSurface, 0);
++    glBindTexture(GL_TEXTURE_RECTANGLE, 0);
++    // Depth+stencil renderbuffer (shared across app widgets that use this FBO).
++    GLuint depthRB = 0;
++    glGenRenderbuffers(1, &depthRB);
++    glBindRenderbuffer(GL_RENDERBUFFER, depthRB);
++    glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH24_STENCIL8, width, height);
++    glBindRenderbuffer(GL_RENDERBUFFER, 0);
++    // Assemble FBO. Leave it bound on return: FBO 0 is GL_FRAMEBUFFER_UNDEFINED
++    // on macOS 26 Core Profile 4.1.
++    GLuint fbo = 0;
++    glGenFramebuffers(1, &fbo);
++    glBindFramebuffer(GL_FRAMEBUFFER, fbo);
++    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
++                           GL_TEXTURE_RECTANGLE, texture, 0);
++    glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT,
++                              GL_RENDERBUFFER, depthRB);
++    macOS26FBOEntry entry;
++    entry.fbo = fbo; entry.texture = texture; entry.depthRB = depthRB;
++    entry.ioSurface = ioSurface; entry.width = width; entry.height = height;
++    s_macOS26FBOs[ctx] = entry;
++    return fbo;
++}
++static IOSurfaceRef macOS26_getIOSurface(CGLContextObj ctx)
++{
++    auto it = s_macOS26FBOs.find(ctx);
++    return (it != s_macOS26FBOs.end()) ? it->second.ioSurface : nullptr;
++}
++#pragma clang diagnostic pop
+ 
+ QT_BEGIN_NAMESPACE
+ 
+@@ -216,7 +302,70 @@
+     QWindow *window = static_cast<QCocoaWindow *>(surface)->window();
+     setActiveWindow(window);
+ 
+-    [m_context flushBuffer];
++    // macOS 26: NSOpenGLContext.flushBuffer requires a drawable (removed with
++    // NSOpenGL). Use CGLFlushDrawable on the underlying CGL context to flush,
++    // then composite the IOSurface-backed FBO to the view's CALayer so the
++    // rendered frame appears on screen.
++    static bool nsOpenGLAvailable = ![[NSProcessInfo processInfo]
++        isOperatingSystemAtLeastVersion:(NSOperatingSystemVersion){26, 0, 0}];
++    if (nsOpenGLAvailable) {
++        [m_context flushBuffer];
++    } else {
++#pragma clang diagnostic push
++#pragma clang diagnostic ignored "-Wdeprecated-declarations"
++        CGLContextObj ctx = static_cast<CGLContextObj>([m_context CGLContextObj]);
++        glFlush(); // ensure GL commands are complete before CALayer reads the IOSurface
++        CGLFlushDrawable(ctx);
++#pragma clang diagnostic pop
++        // Present the IOSurface to the view's CALayer on the main thread.
++        // If swapBuffers is already called from the main thread (the common case
++        // for Qt's single-threaded render loop) execute the CALayer update
++        // synchronously so it completes before swapBuffers returns. This ensures
++        // the frame is fully committed and focus is initialised before the next
++        // IUI RPC call reads isKeyActioned.
++        // If called from a background GL thread, dispatch to the main queue.
++        IOSurfaceRef ioSurface = macOS26_getIOSurface(ctx);
++        if (ioSurface) {
++            QCocoaWindow *cocoaWindow = static_cast<QCocoaWindow *>(surface);
++            NSView *view = static_cast<NSView *>(cocoaWindow->contentView());
++            IOSurfaceRef retained = (IOSurfaceRef)CFRetain(ioSurface);
++            auto updateLayer = ^{
++                view.wantsLayer = YES;
++                CALayer *rootLayer = view.layer;
++                if (rootLayer) {
++                    // GL origin is bottom-left; CALayer origin is top-left.
++                    // Use a dedicated sublayer that fills the view and carries the
++                    // Y-flip transform, so we don't distort the root layer geometry.
++                    static const NSString *kGLSublayerKey = @"qt563_gl_sublayer";
++                    CALayer *glLayer = [rootLayer valueForKey:(NSString *)kGLSublayerKey];
++                    if (!glLayer) {
++                        glLayer = [CALayer layer];
++                        glLayer.frame = rootLayer.bounds;
++                        glLayer.autoresizingMask = kCALayerWidthSizable | kCALayerHeightSizable;
++                        glLayer.contentsGravity = kCAGravityResize;
++                        glLayer.transform = CATransform3DMakeScale(1.0, -1.0, 1.0);
++                        [rootLayer addSublayer:glLayer];
++                        [rootLayer setValue:glLayer forKey:(NSString *)kGLSublayerKey];
++                    }
++                    // CALayer caches the contents pointer and skips re-compositing
++                    // if the same IOSurface object is set again. Use setContents:
++                    // then immediately call setContentsChanged to force CALayer to
++                    // re-read the IOSurface pixels every frame.
++                    [CATransaction begin];
++                    [CATransaction setDisableActions:YES];
++                    [glLayer setContents:(__bridge id)retained];
++                    [glLayer setContentsChanged];
++                    [CATransaction commit];
++                }
++                CFRelease(retained);
++            };
++            if ([NSThread isMainThread]) {
++                updateLayer();
++            } else {
++                dispatch_async(dispatch_get_main_queue(), updateLayer);
++            }
++        }
++    }
+ }
+ 
+ bool QCocoaGLContext::makeCurrent(QPlatformSurface *surface)
+@@ -229,6 +378,25 @@
+     setActiveWindow(window);
+ 
+     [m_context makeCurrentContext];
++
++    // macOS 26: NSOpenGLContext.setView: removed, so we use the IOSurface-backed
++    // surrogate FBO via defaultFramebufferObject() override. Size it to match the
++    // window's current backing pixel size (recreated on resize).
++    // Leave the FBO bound so no GL call inadvertently targets the undefined FBO 0.
++    static bool nsOpenGLAvailable = ![[NSProcessInfo processInfo]
++        isOperatingSystemAtLeastVersion:(NSOperatingSystemVersion){26, 0, 0}];
++    if (!nsOpenGLAvailable) {
++        CGLContextObj ctx = static_cast<CGLContextObj>([m_context CGLContextObj]);
++        QSize sz  = window->size();
++        qreal dpr = window->devicePixelRatio();
++        int w = qMax(1, qRound(sz.width()  * dpr));
++        int h = qMax(1, qRound(sz.height() * dpr));
++        macOS26_getOrCreateFBO(ctx, w, h);
++        // Drain any GL errors accumulated during context setup so the app's
++        // logAnyOpenGLError() does not pick up stale errors.
++        while (glGetError() != GL_NO_ERROR) {}
++    }
++
+     update();
+     return true;
+ }
+@@ -370,6 +538,24 @@
+ bool QCocoaGLContext::isSharing() const
+ {
+     return m_shareContext != nil;
++}
++
++GLuint QCocoaGLContext::defaultFramebufferObject(QPlatformSurface *) const
++{
++    // macOS 26: NSOpenGLContext.setView: was removed so the CGL context has no
++    // window-system drawable and FBO 0 is GL_FRAMEBUFFER_UNDEFINED (0x8219).
++    // Return a real FBO (with a renderbuffer) so that Qt's
++    // QOpenGLFunctions::glBindFramebuffer(target, 0) redirects to this FBO
++    // instead of the undefined FBO 0. Only applies on macOS 26+.
++    static bool useSurrogate = [[NSProcessInfo processInfo]
++        isOperatingSystemAtLeastVersion:(NSOperatingSystemVersion){26, 0, 0}];
++    if (!useSurrogate)
++        return 0;
++    // The FBO was created in makeCurrent() while the context was current.
++    CGLContextObj ctx = static_cast<CGLContextObj>([m_context CGLContextObj]);
++    auto it = s_macOS26FBOs.find(ctx);
++    GLuint result = (it != s_macOS26FBOs.end()) ? it->second.fbo : 0;
++    return result;
+ }
+ 
+ QT_END_NAMESPACE
+diff -ruN qt-src-pristine/qtbase/src/plugins/platforms/cocoa/qcocoahelpers.mm qt-src-patched/qtbase/src/plugins/platforms/cocoa/qcocoahelpers.mm
+--- qt-src-pristine/qtbase/src/plugins/platforms/cocoa/qcocoahelpers.mm	2017-09-06 13:13:54
++++ qt-src-patched/qtbase/src/plugins/platforms/cocoa/qcocoahelpers.mm	2026-08-10 13:38:23
+@@ -549,9 +549,9 @@
+     // Verbatim copy if HIViewDrawCGImage (as shown on Carbon-Dev)
+     OSStatus err = noErr;
+ 
+-    require_action(inContext != NULL, InvalidContext, err = paramErr);
+-    require_action(inBounds != NULL, InvalidBounds, err = paramErr);
+-    require_action(inImage != NULL, InvalidImage, err = paramErr);
++    if (inContext == NULL) { err = paramErr; goto InvalidContext; }
++    if (inBounds == NULL) { err = paramErr; goto InvalidBounds; }
++    if (inImage == NULL) { err = paramErr; goto InvalidImage; }
+ 
+     CGContextSaveGState( inContext );
+     CGContextTranslateCTM (inContext, 0, inBounds->origin.y + CGRectGetMaxY(*inBounds));
+diff -ruN qt-src-pristine/qtbase/src/plugins/platforms/cocoa/qcocoamenuloader.mm qt-src-patched/qtbase/src/plugins/platforms/cocoa/qcocoamenuloader.mm
+--- qt-src-pristine/qtbase/src/plugins/platforms/cocoa/qcocoamenuloader.mm	2017-09-06 13:13:54
++++ qt-src-patched/qtbase/src/plugins/platforms/cocoa/qcocoamenuloader.mm	2026-08-10 13:38:23
+@@ -86,15 +86,33 @@
+         QFile::copy(file.absoluteFilePath(), destinationFile.absoluteFilePath());
+     }
+ 
+-    // Load and instantiate nib file from temp
++    // Load and instantiate nib file from temp.
++    // Wrap in @try/@catch: on macOS 26+, NSNib raises an NSException when decoding
++    // legacy NIB objects (e.g. NSCalendarDate) that were removed from AppKit.
++    // The app menu is non-essential for Qt component tests and headless operation,
++    // so we degrade gracefully rather than aborting.
+     NSURL *nibUrl = [NSURL fileURLWithPath : QCFString::toNSString(nibDir)];
+-    NSNib *nib = [[NSNib alloc] initWithContentsOfURL : nibUrl];
++    NSNib *nib = nil;
++    @try {
++        nib = [[NSNib alloc] initWithContentsOfURL : nibUrl];
++    } @catch (NSException *exception) {
++        qWarning("qt_mac_loadMenuNib: NSNib raised exception loading nib: %s - %s",
++                 [[exception name] UTF8String], [[exception reason] UTF8String]);
++        return;
++    }
+     [nib autorelease];
+     if(!nib) {
+-        qWarning("qt_mac_loadMenuNib: could not load nib from  temp");
++        qWarning("qt_mac_loadMenuNib: could not load nib from temp");
+         return;
+     }
+-    bool ok = [nib instantiateNibWithOwner : qtMenuLoader topLevelObjects : nil];
++    bool ok = false;
++    @try {
++        ok = [nib instantiateNibWithOwner : qtMenuLoader topLevelObjects : nil];
++    } @catch (NSException *exception) {
++        qWarning("qt_mac_loadMenuNib: NSNib raised exception instantiating nib: %s - %s",
++                 [[exception name] UTF8String], [[exception reason] UTF8String]);
++        return;
++    }
+     if (!ok) {
+         qWarning("qt_mac_loadMenuNib: could not instantiate nib");
+     }
+diff -ruN qt-src-pristine/qtbase/src/plugins/platforms/cocoa/qcocoawindow.mm qt-src-patched/qtbase/src/plugins/platforms/cocoa/qcocoawindow.mm
+--- qt-src-pristine/qtbase/src/plugins/platforms/cocoa/qcocoawindow.mm	2017-09-06 13:13:54
++++ qt-src-patched/qtbase/src/plugins/platforms/cocoa/qcocoawindow.mm	2026-08-10 13:38:23
+@@ -1140,7 +1140,11 @@
+     // When ordering below the window must be tranclucent.
+     static GLint openglSourfaceOrder = qt_mac_resolveOption(1, "QT_MAC_OPENGL_SURFACE_ORDER");
+ 
+-    bool translucent = (window()->format().alphaBufferSize() > 0
++    // For OpenGL surfaces, alphaBufferSize controls per-pixel GL blending — it does
++    // not mean the NSWindow itself should be composited as transparent.  Forcing the
++    // NSWindow opaque lets the GL-rendered content (which has alpha=1 for its
++    // background) appear correctly on screen on macOS / Apple Silicon.
++    bool translucent = ((!surface()->supportsOpenGL() && window()->format().alphaBufferSize() > 0)
+                         || window()->opacity() < 1
+                         || (m_qtView && [m_qtView hasMask]))
+                         || (surface()->supportsOpenGL() && openglSourfaceOrder == -1);
+@@ -1552,7 +1556,11 @@
+     // When ordering below the window must be tranclucent and have a clear background color.
+     static GLint openglSourfaceOrder = qt_mac_resolveOption(1, "QT_MAC_OPENGL_SURFACE_ORDER");
+ 
+-    bool isTranslucent = window()->format().alphaBufferSize() > 0
++    // For OpenGL surfaces, alphaBufferSize controls per-pixel GL blending — it does
++    // not mean the NSWindow should be transparent.  Only mark the window translucent
++    // when the GL surface is ordered below (openglSourfaceOrder == -1) or when a
++    // non-OpenGL surface explicitly requests an alpha channel.
++    bool isTranslucent = (!surface()->supportsOpenGL() && window()->format().alphaBufferSize() > 0)
+                          || (surface()->supportsOpenGL() && openglSourfaceOrder == -1);
+     if (isTranslucent) {
+         [createdWindow setBackgroundColor:[NSColor clearColor]];
+diff -ruN qt-src-pristine/qtbase/src/plugins/platforms/cocoa/qnsview.mm qt-src-patched/qtbase/src/plugins/platforms/cocoa/qnsview.mm
+--- qt-src-pristine/qtbase/src/plugins/platforms/cocoa/qnsview.mm	2017-09-06 13:13:54
++++ qt-src-patched/qtbase/src/plugins/platforms/cocoa/qnsview.mm	2026-08-10 13:38:23
+@@ -241,10 +241,23 @@
+ - (void) setQCocoaGLContext:(QCocoaGLContext *)context
+ {
+     m_glContext = context;
+-    [m_glContext->nsOpenGLContext() setView:self];
+-    if (![m_glContext->nsOpenGLContext() view]) {
+-        //was unable to set view
+-        m_shouldSetGLContextinDrawRect = true;
++    // macOS 26 (Tahoe): NSOpenGLContext setView: is present in the ObjC runtime but its
++    // implementation is a brk #1 trap (API removed at runtime). respondsToSelector: returns
++    // YES, so we must guard with an OS version check instead.
++    static bool nsOpenGLSetViewAvailable = ![[NSProcessInfo processInfo]
++        isOperatingSystemAtLeastVersion:(NSOperatingSystemVersion){26, 0, 0}];
++    NSOpenGLContext *nsCtx = m_glContext->nsOpenGLContext();
++    if (nsOpenGLSetViewAvailable) {
++        [nsCtx setView:self];
++        if (![nsCtx view]) {
++            //was unable to set view
++            m_shouldSetGLContextinDrawRect = true;
++        }
++    } else {
++        // macOS 26+: setView: is removed. The GL context renders into an
++        // IOSurface-backed FBO; swapBuffers() composites it via CALayer.
++        // Mark this view as layer-backed so setContents: on view.layer works.
++        self.wantsLayer = YES;
+     }
+ 
+     if (!m_subscribesForGlobalFrameNotifications) {
+@@ -581,7 +594,11 @@
+ {
+ #ifndef QT_NO_OPENGL
+     if (m_glContext && m_shouldSetGLContextinDrawRect) {
+-        [m_glContext->nsOpenGLContext() setView:self];
++        NSOpenGLContext *nsCtx = m_glContext->nsOpenGLContext();
++        static bool nsOpenGLSetViewAvailable = ![[NSProcessInfo processInfo]
++            isOperatingSystemAtLeastVersion:(NSOperatingSystemVersion){26, 0, 0}];
++        if (nsOpenGLSetViewAvailable)
++            [nsCtx setView:self];
+         m_shouldSetGLContextinDrawRect = false;
+     }
+ #endif
+@@ -1546,6 +1563,8 @@
+ 
+ - (void)keyDown:(NSEvent *)nsevent
+ {
++    if (m_window && !m_window->isVisible())
++        return;
+     if (m_window && (m_window->flags() & Qt::WindowTransparentForInput) )
+         return [super keyDown:nsevent];
+     [self handleKeyEvent:nsevent eventType:int(QEvent::KeyPress)];
+@@ -1553,6 +1572,8 @@
+ 
+ - (void)keyUp:(NSEvent *)nsevent
+ {
++    if (m_window && !m_window->isVisible())
++        return;
+     if (m_window && (m_window->flags() & Qt::WindowTransparentForInput) )
+         return [super keyUp:nsevent];
+     [self handleKeyEvent:nsevent eventType:int(QEvent::KeyRelease)];
+diff -ruN qt-src-pristine/qtbase/src/testlib/qtestcase.cpp qt-src-patched/qtbase/src/testlib/qtestcase.cpp
+--- qt-src-pristine/qtbase/src/testlib/qtestcase.cpp	2017-09-06 13:13:54
++++ qt-src-patched/qtbase/src/testlib/qtestcase.cpp	2026-08-10 13:38:23
+@@ -2079,6 +2079,14 @@
+ 
+             invokeMethod(QTest::currentTestObject, "cleanup()");
+ 
++            // Flush any pending deleteLater() calls immediately after cleanup() so that
++            // objects queued for deletion are destroyed before the test result is recorded.
++            // Without this, ASAN / valgrind reports false-positive memory leaks for objects
++            // that are legitimately deleted but whose deferred-delete events haven't been
++            // dispatched yet. Qt 5.6.3's event loop doesn't drain the deferred-delete queue
++            // between test functions, so we do it explicitly here.
++            QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
++
+             // If the test isn't a benchmark, finalize the result after cleanup() has finished.
+             if (!isBenchmark)
+                 QTestResult::finishedCurrentTestDataCleanup();
+diff -ruN qt-src-pristine/qtbase/src/testlib/qtesttable.cpp qt-src-patched/qtbase/src/testlib/qtesttable.cpp
+--- qt-src-pristine/qtbase/src/testlib/qtesttable.cpp	2017-09-06 13:13:54
++++ qt-src-patched/qtbase/src/testlib/qtesttable.cpp	2026-08-10 13:38:23
+@@ -132,7 +132,7 @@
+     return size_t(index) < d->dataList.size() ? d->dataList[index] : Q_NULLPTR;
+ }
+ 
+-class NamePredicate : public std::unary_function<QTestTablePrivate::Element, bool>
++class NamePredicate
+ {
+ public:
+     explicit NamePredicate(const char *needle) : m_needle(needle) {}
+diff -ruN qt-src-pristine/qtbase/src/tools/moc/generator.cpp qt-src-patched/qtbase/src/tools/moc/generator.cpp
+--- qt-src-pristine/qtbase/src/tools/moc/generator.cpp	2017-09-06 13:13:54
++++ qt-src-patched/qtbase/src/tools/moc/generator.cpp	2026-08-10 13:38:23
+@@ -490,7 +490,7 @@
+ 
+         const QByteArray &scope = *scopeIt;
+ 
+-        if (scope == "Qt")
++        if (scope == "Qt" || scope.endsWith("::Qt"))
+             continue;
+         if (qualifiedNameEquals(cdef->qualified, scope))
+             continue;
+@@ -508,7 +508,7 @@
+         int s = enumKey.lastIndexOf("::");
+         if (s > 0) {
+             QByteArray scope = enumKey.left(s);
+-            if (scope != "Qt" && !qualifiedNameEquals(cdef->qualified, scope) && !extraList.contains(scope))
++            if (scope != "Qt" && !scope.endsWith("::Qt") && !qualifiedNameEquals(cdef->qualified, scope) && !extraList.contains(scope))
+                 extraList += scope;
+         }
+     }
+diff -ruN qt-src-pristine/qtbase/src/tools/moc/main.cpp qt-src-patched/qtbase/src/tools/moc/main.cpp
+--- qt-src-pristine/qtbase/src/tools/moc/main.cpp	2017-09-06 13:13:54
++++ qt-src-patched/qtbase/src/tools/moc/main.cpp	2026-08-10 13:38:23
+@@ -435,7 +435,7 @@
+     if (pp.preprocessOnly) {
+         fprintf(out, "%s\n", composePreprocessorOutput(moc.symbols).constData());
+     } else {
+-        if (moc.classList.isEmpty())
++        if (moc.classList.isEmpty() && moc.namespaceWithMetaList.isEmpty())
+             moc.note("No relevant classes found. No output generated.");
+         else
+             moc.generate(out);
+diff -ruN qt-src-pristine/qtbase/src/tools/moc/moc.cpp qt-src-patched/qtbase/src/tools/moc/moc.cpp
+--- qt-src-pristine/qtbase/src/tools/moc/moc.cpp	2017-09-06 13:13:54
++++ qt-src-patched/qtbase/src/tools/moc/moc.cpp	2026-08-10 13:38:23
+@@ -377,13 +377,52 @@
+     return false;
+ }
+ 
++// EPG backport: consume a single C++11 attribute-specifier of the form
++//   [[ token-list ]]
++// from the current position in the token stream and return true. If no such
++// specifier is at the cursor, the cursor is left untouched and false is
++// returned. The body of the specifier is treated opaquely: any tokens between
++// the opening `[[` and the matching `]]` are discarded. Nested `[` / `]`
++// pairs inside the body (for example inside a balanced expression argument)
++// are tracked with a small depth counter so we only stop at the genuine
++// closing `]]`. This lets Qt 5.6.3 moc tolerate constructs such as
++//   [[nodiscard]] virtual QString getEnvironmentValue(...) const;
++// in `public slots:` blocks, which are common in modern application code.
++bool Moc::swallowAttributeSpecifier()
++{
++    if (index + 1 >= symbols.size())
++        return false;
++    if (symbols.at(index).token != LBRACK)
++        return false;
++    if (symbols.at(index + 1).token != LBRACK)
++        return false;
++    index += 2;
++    int bracketDepth = 1;
++    while (index < symbols.size() && bracketDepth > 0) {
++        const Token t = symbols.at(index++).token;
++        if (t == LBRACK) {
++            ++bracketDepth;
++        } else if (t == RBRACK) {
++            if (bracketDepth == 1
++                && index < symbols.size()
++                && symbols.at(index).token == RBRACK) {
++                ++index;
++                return true;
++            }
++            --bracketDepth;
++        }
++    }
++    return true;
++}
++
+ // returns false if the function should be ignored
+ bool Moc::parseFunction(FunctionDef *def, bool inMacro)
+ {
+     def->isVirtual = false;
+     def->isStatic = false;
+     //skip modifiers and attributes
+-    while (test(INLINE) || (test(STATIC) && (def->isStatic = true) == true) ||
++    while (swallowAttributeSpecifier()
++        || test(INLINE) || (test(STATIC) && (def->isStatic = true) == true) ||
+         (test(VIRTUAL) && (def->isVirtual = true) == true) //mark as virtual
+         || testFunctionAttribute(def) || testFunctionRevision(def)) {}
+     bool templateFunction = (lookup() == TEMPLATE);
+@@ -478,7 +517,8 @@
+     def->isVirtual = false;
+     def->isStatic = false;
+     //skip modifiers and attributes
+-    while (test(EXPLICIT) || test(INLINE) || (test(STATIC) && (def->isStatic = true) == true) ||
++    while (swallowAttributeSpecifier()
++        || test(EXPLICIT) || test(INLINE) || (test(STATIC) && (def->isStatic = true) == true) ||
+         (test(VIRTUAL) && (def->isVirtual = true) == true) //mark as virtual
+         || testFunctionAttribute(def) || testFunctionRevision(def)) {}
+     bool tilde = test(TILDE);
+@@ -562,11 +602,75 @@
+                     } else if (!test(SEMIC)) {
+                         NamespaceDef def;
+                         def.name = lexem();
++                        // Handle C++17 nested namespace syntax: namespace A::B::C
++                        while (test(SCOPE)) {
++                            if (test(IDENTIFIER))
++                                def.name += "::" + lexem();
++                            else
++                                break;
++                        }
+                         next(LBRACE);
+                         def.begin = index - 1;
+                         until(RBRACE);
+                         def.end = index;
+                         index = def.begin + 1;
++                        // Scan the namespace body for Q_NAMESPACE / Q_ENUM_NS /
++                        // Q_FLAG_NS markers (preserved as IDENTIFIER tokens by
++                        // the macro-bypass logic in preprocessor.cpp).
++                        {
++                            int depth = 0;
++                            while (index < def.end - 1) {
++                                Token t2 = next();
++                                if (t2 == LBRACE)  { ++depth; continue; }
++                                if (t2 == RBRACE)  { --depth; continue; }
++                                if (depth > 0)       continue;
++                                if (t2 == IDENTIFIER) {
++                                    const QByteArray lex2 = lexem();
++                                    if (lex2 == "Q_NAMESPACE") {
++                                        def.hasQNamespace = true;
++                                    } else if (lex2 == "Q_ENUM_NS"
++                                               || lex2 == "Q_FLAG_NS") {
++                                        const bool isFlag = (lex2 == "Q_FLAG_NS");
++                                        if (test(LPAREN)) {
++                                            if (test(IDENTIFIER))
++                                                def.enumDeclarations[lexem()] = isFlag;
++                                            test(RPAREN);
++                                        }
++                                    }
++                                }
++                            }
++                        }
++                        // For Q_NAMESPACE namespaces, parse enum definitions
++                        // so the generator can emit key/value metadata.
++                        if (def.hasQNamespace && !def.enumDeclarations.isEmpty()) {
++                            index = def.begin + 1;
++                            int depth = 0;
++                            while (index < def.end - 1) {
++                                Token t2 = next();
++                                if (t2 == LBRACE)  { ++depth; continue; }
++                                if (t2 == RBRACE)  { --depth; continue; }
++                                if (depth > 0)       continue;
++                                if (t2 == ENUM) {
++                                    const int savedIdx = index;
++                                    EnumDef enumDef;
++                                    if (parseEnum(&enumDef)) {
++                                        if (def.enumDeclarations.contains(enumDef.name))
++                                            def.enumList += enumDef;
++                                    } else {
++                                        index = savedIdx;
++                                    }
++                                }
++                            }
++                        }
++                        def.qualified = def.name;
++                        // Only emit namespace metadata for the top-level file
++                        // being processed.  Namespaces from included headers
++                        // get their own moc_<header>.cpp generated when that
++                        // header is moc'd directly; generating the symbol here
++                        // too would cause multiply-defined symbol errors when
++                        // multiple translation units include the same header.
++                        if (def.hasQNamespace && currentFilenames.size() == 1)
++                            namespaceWithMetaList += def;
+                         namespaceList += def;
+                         index = rewind;
+                     }
+@@ -909,10 +1013,128 @@
+         Generator generator(&classList[i], metaTypes, knownQObjectClasses, knownGadgets, out);
+         generator.generateCode();
+     }
++    for (i = 0; i < namespaceWithMetaList.size(); ++i)
++        generateNamespaceMeta(out, namespaceWithMetaList.at(i));
+ 
+     fprintf(out, "QT_END_MOC_NAMESPACE\n");
+ }
+ 
++// ---------------------------------------------------------------------------
++// Helper: string-table registration for namespace meta object generation
++// ---------------------------------------------------------------------------
++static int nsStrReg(QList<QByteArray> &strings, const QByteArray &s)
++{
++    int idx = strings.indexOf(s);
++    if (idx < 0) { idx = strings.size(); strings.append(s); }
++    return idx;
++}
++
++// ---------------------------------------------------------------------------
++// Emit a complete staticMetaObject for a Q_NAMESPACE namespace.
++// Mirrors Generator::generateCode() but restricted to enum-only metadata.
++// ---------------------------------------------------------------------------
++void Moc::generateNamespaceMeta(FILE *out, const NamespaceDef &ns)
++{
++    QList<QByteArray> strings;
++    nsStrReg(strings, ns.name);
++    const int enumCount = ns.enumList.count();
++    for (int i = 0; i < enumCount; ++i) {
++        const EnumDef &e = ns.enumList.at(i);
++        nsStrReg(strings, e.name);
++        for (int j = 0; j < e.values.count(); ++j)
++            nsStrReg(strings, e.values.at(j));
++    }
++
++    QByteArray qualId = ns.qualified;
++    qualId.replace(':', '_');
++
++    // String data struct
++    fprintf(out, "struct qt_meta_stringdata_%s_t {\n"
++                 "    QByteArrayData data[%d];\n",
++            qualId.constData(), strings.size());
++    {
++        int total = 0;
++        for (int i = 0; i < strings.size(); ++i)
++            total += strings.at(i).length() + 1;
++        fprintf(out, "    char stringdata0[%d];\n};\n", total);
++    }
++    fprintf(out,
++        "#define QT_MOC_LITERAL(idx, ofs, len) \\\n"
++        "    Q_STATIC_BYTE_ARRAY_DATA_HEADER_INITIALIZER_WITH_OFFSET(len, \\\n"
++        "    qptrdiff(offsetof(qt_meta_stringdata_%s_t, stringdata0) + ofs \\\n"
++        "        - idx * sizeof(QByteArrayData)) \\\n"
++        "    )\n", qualId.constData());
++    fprintf(out, "static const qt_meta_stringdata_%s_t qt_meta_stringdata_%s = {\n"
++                 "    {\n", qualId.constData(), qualId.constData());
++    {
++        int byteOfs = 0;
++        for (int i = 0; i < strings.size(); ++i) {
++            const QByteArray &s = strings.at(i);
++            fprintf(out, "QT_MOC_LITERAL(%d, %d, %d)", i, byteOfs, s.length());
++            if (i != strings.size() - 1) fputc(',', out);
++            fprintf(out, " // \"%s\"\n", s.constData());
++            byteOfs += s.length() + 1;
++        }
++    }
++    fprintf(out, "    },\n    \"");
++    for (int i = 0; i < strings.size(); ++i) {
++        if (i) fputs("\\0", out);
++        fputs(strings.at(i).constData(), out);
++    }
++    fprintf(out, "\"\n};\n#undef QT_MOC_LITERAL\n\n");
++
++    // Data array (14-word header + enum entries)
++    // 14 = MetaObjectPrivateFieldCount for Qt 5.6 (OutputRevision 7)
++    const int enumsOffset = 14;
++    fprintf(out, "static const uint qt_meta_data_%s[] = {\n\n"
++                 " // content:\n"
++                 "    %4d,       // revision\n"
++                 "    %4d,       // classname\n"
++                 "    %4d, %4d, // classinfo\n"
++                 "    %4d, %4d, // methods\n"
++                 "    %4d, %4d, // properties\n"
++                 "    %4d, %4d, // enums/sets\n"
++                 "    %4d, %4d, // constructors\n"
++                 "    %4d,       // flags\n"
++                 "    %4d,       // signalCount\n",
++            qualId.constData(),
++            7, strings.indexOf(ns.name),
++            0, 0, 0, 0, 0, 0,
++            enumCount, (enumCount ? enumsOffset : 0),
++            0, 0, 0, 0);
++    if (enumCount > 0) {
++        fprintf(out, "\n // enums: name, flags, count, data\n");
++        int valOfs = enumsOffset + 4 * enumCount;
++        for (int i = 0; i < enumCount; ++i) {
++            const EnumDef &e = ns.enumList.at(i);
++            fprintf(out, "    %4d, 0x%.1x, %4d, %4d,\n",
++                    strings.indexOf(e.name),
++                    ns.enumDeclarations.value(e.name) ? 1 : 0,
++                    e.values.count(), valOfs);
++            valOfs += e.values.count() * 2;
++        }
++        fprintf(out, "\n // enum data: key, value\n");
++        for (int i = 0; i < enumCount; ++i) {
++            const EnumDef &e = ns.enumList.at(i);
++            for (int j = 0; j < e.values.count(); ++j) {
++                const QByteArray &val = e.values.at(j);
++                QByteArray code = ns.qualified;
++                if (e.isEnumClass) code += "::" + e.name;
++                code += "::" + val;
++                fprintf(out, "    %4d, uint(%s),\n",
++                        strings.indexOf(val), code.constData());
++            }
++        }
++    }
++    fprintf(out, "\n       0        // eod\n};\n\n");
++
++    // staticMetaObject definition
++    fprintf(out, "const QMetaObject %s::staticMetaObject = {\n"
++                 "    { Q_NULLPTR, qt_meta_stringdata_%s.data,\n"
++                 "      qt_meta_data_%s, Q_NULLPTR, Q_NULLPTR, Q_NULLPTR}\n};\n\n",
++            ns.qualified.constData(), qualId.constData(), qualId.constData());
++}
++
+ void Moc::parseSlots(ClassDef *def, FunctionDef::Access access)
+ {
+     int defaultRevision = -1;
+@@ -1608,9 +1830,18 @@
+             }
+             p.notifyId = notifyId;
+             if (notifyId == -1) {
++                // Allow a Q_PROPERTY to declare a NOTIFY signal that is not
++                // visible to moc in this translation unit (for example a
++                // signal inherited from a base class declared in another
++                // header). The generated meta-object records notifyId=-1, so
++                // QMetaProperty::hasNotifySignal() will return false and
++                // callers that depend on notify metadata can detect and skip.
++                // Direct C++ connect() to the inherited signal continues to
++                // work through normal name lookup. Emitted as a warning so
++                // genuine typos are still surfaced without failing the build.
+                 QByteArray msg = "NOTIFY signal '" + p.notify + "' of property '" + p.name
+                         + "' does not exist in class " + cdef->classname + ".";
+-                error(msg.constData());
++                warning(msg.constData());
+             }
+         }
+     }
+diff -ruN qt-src-pristine/qtbase/src/tools/moc/moc.h qt-src-patched/qtbase/src/tools/moc/moc.h
+--- qt-src-pristine/qtbase/src/tools/moc/moc.h	2017-09-06 13:13:54
++++ qt-src-patched/qtbase/src/tools/moc/moc.h	2026-08-10 13:38:23
+@@ -186,8 +186,13 @@
+ 
+ struct NamespaceDef {
+     QByteArray name;
++    QByteArray qualified;
+     int begin;
+     int end;
++    bool hasQNamespace;
++    QList<EnumDef> enumList;
++    QHash<QByteArray, bool> enumDeclarations; // true = Q_FLAG_NS
++    NamespaceDef() : begin(0), end(0), hasQNamespace(false) {}
+ };
+ 
+ class Moc : public Parser
+@@ -204,6 +209,7 @@
+     QByteArray includePath;
+     QList<QByteArray> includeFiles;
+     QList<ClassDef> classList;
++    QList<NamespaceDef> namespaceWithMetaList;
+     QMap<QByteArray, QByteArray> interface2IdMap;
+     QList<QByteArray> metaTypes;
+     // map from class name to fully qualified name
+@@ -213,6 +219,7 @@
+ 
+     void parse();
+     void generate(FILE *out);
++    void generateNamespaceMeta(FILE *out, const NamespaceDef &ns);
+ 
+     bool parseClassHead(ClassDef *def);
+     inline bool inClass(const ClassDef *def) const {
+@@ -254,6 +261,10 @@
+     bool testFunctionAttribute(FunctionDef *def);
+     bool testFunctionAttribute(Token tok, FunctionDef *def);
+     bool testFunctionRevision(FunctionDef *def);
++    // EPG backport: tolerate C++11 attribute-specifier sequences ([[ ... ]])
++    // in slot/signal/Q_INVOKABLE declarations. Returns true when one was
++    // consumed; leaves the token stream untouched otherwise.
++    bool swallowAttributeSpecifier();
+ 
+     void checkSuperClasses(ClassDef *def);
+     void checkProperties(ClassDef* cdef);
+diff -ruN qt-src-pristine/qtbase/src/tools/moc/preprocessor.cpp qt-src-patched/qtbase/src/tools/moc/preprocessor.cpp
+--- qt-src-pristine/qtbase/src/tools/moc/preprocessor.cpp	2017-09-06 13:13:54
++++ qt-src-patched/qtbase/src/tools/moc/preprocessor.cpp	2026-08-10 13:38:23
+@@ -1150,7 +1150,38 @@
+             continue;
+         }
+         case PP_IDENTIFIER: {
+-            // substitute macros
++            // Preserve Q_NAMESPACE and Q_ENUM_NS/Q_FLAG_NS as raw IDENTIFIER tokens
++            // so the moc parser can detect them inside namespace bodies.
++            // These identifiers are defined as macros in qobjectdefs.h, but expanding
++            // them here would make the namespace-body scanner in parse() unable to
++            // recognise them.
++            {
++                const QByteArray &ident = symbol().lexem();
++                if (ident == "Q_NAMESPACE") {
++                    preprocessed += symbol();
++                    continue;
++                }
++                if (ident == "Q_ENUM_NS" || ident == "Q_FLAG_NS") {
++                    preprocessed += symbol();
++                    // Pass through the (EnumName) argument list unchanged.
++                    while (index < symbols.size()
++                           && symbols.at(index).token == PP_WHITESPACE)
++                        ++index;
++                    if (index < symbols.size()
++                            && symbols.at(index).token == PP_LPAREN) {
++                        preprocessed += symbols.at(index++); // '('
++                        int depth = 1;
++                        while (index < symbols.size() && depth > 0) {
++                            const Symbol &s = symbols.at(index++);
++                            if (s.token == PP_LPAREN)      ++depth;
++                            else if (s.token == PP_RPAREN) --depth;
++                            preprocessed += s;
++                        }
++                    }
++                    continue;
++                }
++            }
++            // substitute macros (normal path)
+             macroExpand(&preprocessed, this, symbols, index, symbol().lineNum, true);
+             continue;
+         }
+diff -ruN qt-src-pristine/qtbase/src/tools/qlalr/compress.cpp qt-src-patched/qtbase/src/tools/qlalr/compress.cpp
+--- qt-src-pristine/qtbase/src/tools/qlalr/compress.cpp	2017-09-06 13:13:54
++++ qt-src-patched/qtbase/src/tools/qlalr/compress.cpp	2026-08-10 13:38:23
+@@ -42,7 +42,7 @@
+ 
+ #define QLALR_NO_CHECK_SORTED_TABLE
+ 
+-struct _Fit: public std::binary_function<int, int, bool>
++struct _Fit
+ {
+   inline bool operator () (int a, int b) const
+   {
+@@ -50,7 +50,7 @@
+   }
+ };
+ 
+-struct _PerfectMatch: public std::binary_function<int, int, bool>
++struct _PerfectMatch
+ {
+   inline bool operator () (int a, int b) const
+   { return a == b; }
+@@ -140,7 +140,7 @@
+   const_iterator _M_endNonZeros;
+ };
+ 
+-struct _SortUncompressedRow: public std::binary_function<UncompressedRow, UncompressedRow, bool>
++struct _SortUncompressedRow
+ {
+   inline bool operator () (const UncompressedRow &a, const UncompressedRow &b) const
+   { return a.count (0) > b.count (0); }
+diff -ruN qt-src-pristine/qtbase/src/tools/qlalr/lalr.cpp qt-src-patched/qtbase/src/tools/qlalr/lalr.cpp
+--- qt-src-pristine/qtbase/src/tools/qlalr/lalr.cpp	2017-09-06 13:13:54
++++ qt-src-patched/qtbase/src/tools/qlalr/lalr.cpp	2026-08-10 13:38:23
+@@ -238,7 +238,7 @@
+   non_terminals.insert (accept_symbol);
+ }
+ 
+-struct Nullable: public std::unary_function<Name, bool>
++struct Nullable
+ {
+   Automaton *_M_automaton;
+ 
+@@ -300,7 +300,7 @@
+ 
+       for (RulePointer rule = _M_grammar->rules.begin (); rule != _M_grammar->rules.end (); ++rule)
+         {
+-          NameList::iterator nn = std::find_if (rule->rhs.begin (), rule->rhs.end (), std::not1 (Nullable (this)));
++          NameList::iterator nn = std::find_if (rule->rhs.begin (), rule->rhs.end (), [this](Name n){ return !Nullable(this)(n); });
+ 
+           if (nn == rule->rhs.end ())
+             changed |= nullables.insert (rule->lhs).second;
+@@ -635,7 +635,7 @@
+                   if (! _M_grammar->isNonTerminal (*A))
+                     continue;
+ 
+-                  NameList::iterator first_not_nullable = std::find_if (dot, rule->rhs.end (), std::not1 (Nullable (this)));
++                  NameList::iterator first_not_nullable = std::find_if (dot, rule->rhs.end (), [this](Name n){ return !Nullable(this)(n); });
+                   if (first_not_nullable != rule->rhs.end ())
+                     continue;
+ 
+diff -ruN qt-src-pristine/qtdeclarative/qtdeclarative.pro qt-src-patched/qtdeclarative/qtdeclarative.pro
+--- qt-src-pristine/qtdeclarative/qtdeclarative.pro	2017-09-12 09:45:46
++++ qt-src-patched/qtdeclarative/qtdeclarative.pro	2026-08-10 13:38:23
+@@ -1,4 +1,5 @@
+-CONFIG += tests_need_tools examples_need_tools
++CONFIG += 
++QT_BUILD_PARTS -= tools
+ load(qt_parts)
+ 
+ !python_available {
+diff -ruN qt-src-pristine/qtimageformats/src/3rdparty/libwebp/src/dsp/dsp.h qt-src-patched/qtimageformats/src/3rdparty/libwebp/src/dsp/dsp.h
+--- qt-src-pristine/qtimageformats/src/3rdparty/libwebp/src/dsp/dsp.h	2017-09-06 13:15:20
++++ qt-src-patched/qtimageformats/src/3rdparty/libwebp/src/dsp/dsp.h	2026-08-10 13:38:23
+@@ -64,7 +64,7 @@
+ // The intrinsics currently cause compiler errors with arm-nacl-gcc and the
+ // inline assembly would need to be modified for use with Native Client.
+ #if (defined(__ARM_NEON__) || defined(WEBP_ANDROID_NEON) || \
+-     defined(__aarch64__)) && !defined(__native_client__)
++     defined(__aarch64__)) && !defined(__native_client__) && !defined(__APPLE__)
+ #define WEBP_USE_NEON
+ #endif
+ 

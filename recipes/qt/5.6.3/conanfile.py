@@ -19,6 +19,79 @@ import shutil
 required_conan_version = ">=1.60.0 <2 || >=2.0.5"
 
 
+# RDK Kirkstone ARMv7 Sky wayland plugin qmake project files. The vendored
+# sources reference these exact generated protocol file names, so the .pro
+# contents mirror setup_and_build_macos_kirkstone_qt563.sh verbatim.
+_WL_SIMPLE_SHELL_PRO = """\
+QT += waylandclient-private
+TARGET = wl-simple-shell
+TEMPLATE = lib
+CONFIG += plugin c++11
+DEFINES += QT_NO_DEBUG
+
+INCLUDEPATH += .
+
+SOURCES += \\
+    main.cpp \\
+    qwaylandwlsimpleshellintegration.cpp \\
+    qwaylandwlsimpleshell.cpp \\
+    qwaylandwlsimpleshellsurface.cpp \\
+    qwaylandskyqshell.cpp \\
+    qwayland-simple-shell.cpp \\
+    qwayland-skyq-shell.cpp \\
+    wayland-simple-shell-protocol.c \\
+    wayland-skyq-shell-protocol.c
+
+HEADERS += \\
+    qt563logging.h \\
+    qwaylandwlsimpleshellintegration_p.h \\
+    qwaylandwlsimpleshell_p.h \\
+    qwaylandwlsimpleshellsurface_p.h \\
+    qwaylandskyqshell_p.h \\
+    qwayland-simple-shell.h \\
+    qwayland-skyq-shell.h \\
+    wayland-simple-shell-client-protocol.h \\
+    wayland-skyq-shell-client-protocol.h
+
+OTHER_FILES += wl-simple-shell.json
+
+PLUGIN_TYPE = wayland-shell-integration
+load(qt_plugin)
+"""
+
+_SKYQ_INPUT_PRO = """\
+QT += waylandclient-private
+TARGET = skyq-input
+TEMPLATE = lib
+CONFIG += plugin c++11
+DEFINES += QT_NO_DEBUG
+
+INCLUDEPATH += .
+
+SOURCES += \\
+    main.cpp \\
+    qwaylandskyqinputdeviceintegration.cpp \\
+    qwaylandskyqinput.cpp \\
+    qwaylandnullinputdevice.cpp \\
+    qwayland-skyq-input.cpp \\
+    wayland-skyq-input-protocol.c
+
+HEADERS += \\
+    qt563logging.h \\
+    qwaylandskyqinputdeviceintegration_p.h \\
+    qwaylandskyqinput.h \\
+    qwaylandnullinputdevice.h \\
+    qwayland-skyq-input.h \\
+    wayland-skyq-input-client-protocol.h \\
+    ethannativeevent.h
+
+OTHER_FILES += skyq-input.json
+
+PLUGIN_TYPE = wayland-inputdevice-integration
+load(qt_plugin)
+"""
+
+
 class QtConan(ConanFile):
     _submodules = ["qtsvg", "qtdeclarative", "qtactiveqt", "qtscript", "qtmultimedia", "qttools", "qtxmlpatterns",
     "qttranslations", "qtdoc", "qtlocation", "qtsensors", "qtconnectivity", "qtwayland",
@@ -35,7 +108,7 @@ class QtConan(ConanFile):
     topics = ("ui", "framework")
     url = "https://github.com/conan-io/conan-center-index"
     homepage = "https://www.qt.io"
-    license = "LGPL-3.0-only"
+    license = "LGPL-2.1-only"
     package_type = "library"
     settings = "os", "arch", "compiler", "build_type"
     options = {
@@ -135,8 +208,46 @@ class QtConan(ConanFile):
     def _settings_build(self):
         return getattr(self, "settings_build", self.settings)
 
+    @property
+    def _is_rdk_kirkstone(self):
+        # True when cross-building for the RDK Kirkstone ARMv7 target, gated on the
+        # os.rdk subsetting provided by the entos-rdk-kirkstone-armv7 profile.
+        # Mirrors setup_and_build_macos_kirkstone_qt563.sh.
+        return self.settings.os == "Linux" and self.settings.get_safe("os.rdk") == "kirkstone"
+
+    @property
+    def _rdk_toolchain_bin(self):
+        execs = self.conf.get("tools.build:compiler_executables", default={}, check_type=dict)
+        cc = execs.get("c")
+        return os.path.dirname(cc) if cc else None
+
+    @property
+    def _rdk_cross_prefix(self):
+        # e.g. "arm-rdk-linux-gnueabi-" derived from the profile's C compiler name.
+        execs = self.conf.get("tools.build:compiler_executables", default={}, check_type=dict)
+        cc = os.path.basename(execs.get("c", "")) if execs.get("c") else ""
+        if cc.endswith("gcc"):
+            return cc[:-3]
+        return "arm-rdk-linux-gnueabi-"
+
     def export(self):
         copy(self, f"qtmodules{self.version}.conf", self.recipe_folder, self.export_folder)
+        # 5.6.3: install-side changes from the core-app setup_and_build Qt SDK
+        # pipeline, applied manually in package() so the Conan build reproduces
+        # the local_sdk SDK exactly. (The source patch is a conandata patch.)
+        copy(self, "qt563_install.patch", self.recipe_folder, self.export_folder)
+        # 5.6.3 Linux: sources for the OSMesa-based offscreen GL platform plugin,
+        # built and packaged in package() so QT_QPA_PLATFORM=offscreengl works
+        # headless (mirrors setup_and_build_linux_x86_qt563.sh).
+        copy(self, "*", os.path.join(self.recipe_folder, "addons", "offscreengl-src"),
+             os.path.join(self.export_folder, "addons", "offscreengl-src"))
+        # 5.6.3 RDK Kirkstone ARMv7: wayland source patch plus the vendored stub
+        # and plugin sources cross-compiled in package(), mirroring
+        # setup_and_build_macos_kirkstone_qt563.sh (neon-lib, libproxy, wayland).
+        copy(self, "qt563_wayland.patch", self.recipe_folder, self.export_folder)
+        for addon in ("stubs", "wl-simple-shell-src", "skyq-input-src"):
+            copy(self, "*", os.path.join(self.recipe_folder, "addons", addon),
+                 os.path.join(self.export_folder, "addons", addon))
 
     def export_sources(self):
         export_conandata_patches(self)
@@ -206,6 +317,32 @@ class QtConan(ConanFile):
 
         if self.settings.os != "Android":
             del self.options.android_sdk
+
+        # Disable features that didn't exist or have incompatible dependencies
+        del self.options.openssl
+        del self.options.with_pcre2
+        del self.options.with_md4c
+        del self.options.with_zstd
+        del self.options.with_harfbuzz
+        del self.options.with_mysql
+        del self.options.with_pq
+        del self.options.with_odbc
+        # Use Qt bundled versions to avoid old dependency version issues
+        del self.options.with_doubleconversion
+        del self.options.with_freetype
+        del self.options.with_libjpeg
+        del self.options.with_libpng
+        del self.options.with_sqlite3
+
+        # RDK Kirkstone ARMv7 target: the device renders through wayland-egl on
+        # GLES2 and has no X11. Force the same configuration the local_sdk build
+        # produces (setup_and_build_macos_kirkstone_qt563.sh) so the packaged Qt
+        # is drop-in compatible: GLES2, no xcb, and qtwayland (client + platform
+        # plugins) built as part of the Qt build.
+        if self._is_rdk_kirkstone:
+            self.options.opengl = "es2"
+            self.options.with_x11 = False
+            self.options.qtwayland = True
 
     def _debug_output(self, message):
         if Version(conan_version) >= "2":
@@ -388,7 +525,9 @@ class QtConan(ConanFile):
 
     def requirements(self):
         self.requires("zlib/[>=1.2.11 <2]")
-        if self.options.get_safe("openssl", False):
+        # Linux/FreeBSD have no native TLS backend, so Qt is linked against
+        # OpenSSL there (see build() -openssl-linked). Apple uses SecureTransport.
+        if self.options.get_safe("openssl", False) or self.settings.os in ["Linux", "FreeBSD"]:
             self.requires("openssl/[>=1.1 <4]")
         if self.options.get_safe("with_pcre2", False):
             self.requires("pcre2/[>=10.42 <11]")
@@ -412,9 +551,9 @@ class QtConan(ConanFile):
             self.requires("harfbuzz/[>=8.3.0]")
         if self.options.get_safe("with_libjpeg", False) and not self.options.multiconfiguration:
             if self.options.get_safe("with_libjpeg", False) == "libjpeg-turbo":
-                self.requires("libjpeg-turbo/[>=3.0 <3.1]")
+                self.requires("libjpeg-turbo/2.1.5")
             else:
-                self.requires("libjpeg/[>=9e]")
+                self.requires("libjpeg/9d")
         if (
             self.options.get_safe("with_libpng", False)
             and not self.options.multiconfiguration
@@ -422,15 +561,8 @@ class QtConan(ConanFile):
             self.requires("libpng/[>=1.6 <2]")
         if self.options.get_safe("with_sqlite3", False) and not self.options.multiconfiguration:
             self.requires("sqlite3/[>=3.45.0 <4]")
-        if self.options.get_safe("with_mysql", False) == "mysql":
-            self.requires("libmysqlclient/8.1.0")
         if self.options.get_safe("with_mysql", False) == "mariadb":
             self.requires("mariadb-connector-c/3.3.3")
-        if self.options.get_safe("with_pq", False):
-            self.requires("libpq/[>=15.4 <18]")
-        if self.options.get_safe("with_odbc", False):
-            if self.settings.os != "Windows":
-                self.requires("odbc/2.3.11")
         if self.options.get_safe("with_openal", False):
             self.requires("openal-soft/[>=1.22.2 <2]")
         if self.options.get_safe("with_libalsa", False):
@@ -441,7 +573,7 @@ class QtConan(ConanFile):
             self.requires("xkbcommon/[>=1.5.0 <2]")
         if self.options.get_safe("opengl", "no") != "no":
             self.requires("opengl/system")
-        if self.options.with_zstd:
+        if self.options.get_safe("with_zstd", False):
             self.requires("zstd/[>=1.5 <1.6]")
         if self.options.qtwebengine and self.settings.os in ["Linux", "FreeBSD"]:
             self.requires("expat/[>=2.6.2 <3]")
@@ -507,17 +639,6 @@ class QtConan(ConanFile):
 
         apply_conandata_patches(self)
 
-        for f in ["renderer", os.path.join("renderer", "core"), os.path.join("renderer", "platform")]:
-            replace_in_file(self, os.path.join(self.source_folder, "qt5", "qtwebengine", "src", "3rdparty", "chromium", "third_party", "blink", f, "BUILD.gn"),
-            "  if (enable_precompiled_headers) {\n    if (is_win) {",
-            "  if (enable_precompiled_headers) {\n    if (false) {"
-        )
-        replace_in_file(self, os.path.join(self.source_folder, "qt5", "qtbase", "configure.json"),
-                "-ldbus-1d",
-                "-ldbus-1"
-        )
-        save(self, os.path.join(self.source_folder, "qt5", "qtbase", "mkspecs", "features", "uikit", "bitcode.prf"), "")
-
         # shorten the path to ANGLE to avoid the following error:
         # C:\J2\w\prod-v2\bsr@4\104220\ebfcf\p\qtde01f793a6074\s\qt5\qtbase\src\3rdparty\angle\src\libANGLE\renderer\d3d\d3d11\texture_format_table_autogen.cpp : fatal error C1083: Cannot open compiler generated file: '': Invalid argument
         copy(self, "*", os.path.join(self.source_folder, "qt5", "qtbase", "src", "3rdparty", "angle"), self.angle_path)
@@ -536,8 +657,64 @@ class QtConan(ConanFile):
         env.define("MAKEFLAGS", f"j{build_jobs(self)}")
         env.define("ANGLE_DIR", self.angle_path)
         env.prepend_path("PKG_CONFIG_PATH", self.generators_folder)
+        # Qt 5.6.3's -openssl-linked config test/link must find the Conan OpenSSL
+        # libraries, which live in the Conan cache rather than a system path. The
+        # configure script honours OPENSSL_LIBS; include dirs come from the global
+        # -I injection below (direct_host deps).
+        if self.settings.os in ["Linux", "FreeBSD"]:
+            _ossl = self.dependencies["openssl"].cpp_info.aggregated_components()
+            _ossl_flags = [f"-L{d}" for d in _ossl.libdirs] + [f"-l{l}" for l in _ossl.libs]
+            env.define("OPENSSL_LIBS", " ".join(_ossl_flags))
         if self.settings.os == "Windows":
             env.prepend_path("PATH", os.path.join(self.source_folder, "qt5", "gnuwin32", "bin"))
+        if is_apple_os(self):
+            # Reproduce setup_and_build_macos_desktop_qt563.sh on Apple Silicon:
+            # force the target arch and disable NEON, since Qt 5.6.3 only wires
+            # NEON drawhelpers for Linux/Android and references undefined symbols
+            # on macOS arm64 otherwise.
+            apple_arch = to_apple_arch(self)
+            arch_flags = f"-arch {apple_arch} -U__ARM_NEON__ -U__ARM_NEON"
+            env.define("CC", "clang")
+            env.define("CXX", "clang++")
+            env.define("CFLAGS", arch_flags)
+            env.define("CXXFLAGS", arch_flags)
+            env.define("LDFLAGS", f"-arch {apple_arch}")
+        if self._is_rdk_kirkstone:
+            # Put the RDK cross-toolchain bin dir first on PATH so qmake finds the
+            # arm-rdk-linux-gnueabi-* tools named by the retargeted target mkspec.
+            # Deliberately do NOT export CC/CXX: that would make the recipe set
+            # QMAKE_CC/QMAKE_CXX globally and force Qt's host bootstrap tools
+            # (native linux-g++, no --sysroot) to use the cross compiler, which
+            # then cannot find its sysroot-hosted C++ headers (<cstddef>). The
+            # cross compiler is scoped to the target via the mkspec's CROSS_COMPILE
+            # prefix instead, exactly like setup_and_build_macos_kirkstone_qt563.sh.
+            tc_bin = self._rdk_toolchain_bin
+            if tc_bin:
+                env.prepend_path("PATH", tc_bin)
+            # The RDK profile's [buildenv] exports Yocto/autotools toolchain
+            # variables (LD, LDFLAGS, AR, RANLIB, STRIP, OBJDUMP). Qt 5.6.3's
+            # configure imports this exact set of SYSTEM_VARIABLES from the
+            # environment into .qmake.cache (LD -> QMAKE_LINK, LDFLAGS ->
+            # QMAKE_LFLAGS, AR -> QMAKE_AR, ...), which is loaded globally for
+            # every build including the host bootstrap tools. That pins
+            # QMAKE_LINK to the bare cross `ld` and QMAKE_LFLAGS to `-Wl,-O1`
+            # (a compiler-driver flag the bare linker rejects), so moc/uic fail
+            # to link. The from-source setup_and_build_macos_kirkstone_qt563.sh
+            # has none of these in its environment. Unset them so Qt resolves
+            # the linker/archiver from the mkspec instead: native for the host
+            # bootstrap tools, CROSS_COMPILE-prefixed for the target.
+            for _sysvar in ("LD", "LDFLAGS", "AR", "RANLIB", "STRIP", "OBJDUMP"):
+                env.unset(_sysvar)
+        # qtdeclarative (QtQml / bundled JavaScriptCore) invokes a `python`
+        # executable at build time; on hosts that only ship `python3` qmake
+        # aborts with "Building QtQml requires Python". Provide a python->python3
+        # shim on PATH, matching the setup_and_build_*_qt563.sh scripts.
+        if not shutil.which("python") and shutil.which("python3"):
+            python_shim_dir = os.path.join(self.build_folder, ".python-shim")
+            shim = os.path.join(python_shim_dir, "python")
+            save(self, shim, '#!/usr/bin/env bash\nexec "%s" "$@"\n' % shutil.which("python3"))
+            os.chmod(shim, 0o755)
+            env.prepend_path("PATH", python_shim_dir)
         env.vars(self).save_script("conan_qt_env_file")
 
     def _make_program(self):
@@ -647,10 +824,87 @@ class QtConan(ConanFile):
         return None
 
     def build(self):
+        if self.settings.os == "Macos":
+            configure_script = os.path.join(
+                self.source_folder, "qt5", "qtbase", "configure"
+            )
+            # strict=False: with no_copy_source=True these edits mutate the shared
+            # source tree, so a rebuild/restart may see them already applied.
+            replace_in_file(
+                self,
+                configure_script,
+                "CFG_USE_GOLD_LINKER=auto\nCFG_ENABLE_NEW_DTAGS=auto",
+                "CFG_USE_GOLD_LINKER=no\nCFG_ENABLE_NEW_DTAGS=no",
+                strict=False,
+            )
+            replace_in_file(
+                self,
+                configure_script,
+                "if linkerSupportsFlag $TEST_COMPILER --enable-new-dtags; then",
+                "if false; then  # Disabled for macOS",
+                strict=False,
+            )
+            # NOTE: the mac.conf OpenGL/AGL fix is applied by qt563_source.patch.
+        if self._is_rdk_kirkstone:
+            # Apply the qtwayland compatibility patch (wl_keyboard v4 repeat_info,
+            # stale-pointer guard) to the shared source, matching the wayland step
+            # of setup_and_build_macos_kirkstone_qt563.sh. --forward makes it
+            # idempotent across rebuilds with no_copy_source.
+            wl_patch = os.path.join(self.recipe_folder, "qt563_wayland.patch")
+            qt_src = os.path.join(self.source_folder, "qt5")
+            self.run(f'patch -p1 --batch --forward --ignore-whitespace -d "{qt_src}" < "{wl_patch}" || true')
+            # Strip the RDK sysroot's Qt 5.15 link-time symlinks (libQt5*.so /
+            # .so.5 / .so.5.6* / *_ours) so the cross-linker cannot resolve -lQt5X
+            # against the sysroot Qt 5.15 and mix its @Qt_5[_PRIVATE_API] symbols
+            # into the freshly built Qt 5.6.3 (the failure breaks qtdeclarative's
+            # ordered build, so every module after it, e.g. qtwebsockets, is never
+            # built). Mirrors the inject step of setup_and_build_macos_kirkstone_qt563.sh;
+            # the real versioned libQt5*.so.5.15.* files are left intact.
+            rdk_sysroot = self.conf.get("tools.build:sysroot", check_type=str)
+            if rdk_sysroot:
+                sysroot_lib = os.path.join(rdk_sysroot, "usr", "lib")
+                removed = 0
+                for _pattern in ("libQt5*.so", "libQt5*.so.5", "libQt5*_ours", "libQt5*.so.5.6*"):
+                    for _link in glob.glob(os.path.join(sysroot_lib, _pattern)):
+                        if os.path.islink(_link):
+                            os.unlink(_link)
+                            removed += 1
+                if removed:
+                    self.output.info(f"RDK: removed {removed} Qt 5.15 link-time symlink(s) "
+                                     f"from sysroot lib dir {sysroot_lib}")
         args = ["-confirm-license", "-silent", "-nomake examples", "-nomake tests",
                 f"-prefix {self.package_folder}"]
+        args.append("-no-warnings-are-errors")
+        # Match core-app setup_and_build Qt 5.6.3 configure flags.
+        args.append("-no-pch")
+        args.append("-no-qml-debug")
+        if is_apple_os(self):
+            # Apple Silicon: NEON disabled via CFLAGS (-U__ARM_NEON__); ensure
+            # Qt does not enable x86 SIMD paths either.
+            args += ["-no-sse2", "-no-sse3", "-no-ssse3",
+                     "-no-sse4.1", "-no-sse4.2", "-no-avx", "-no-avx2"]
+        # Match core-app setup_and_build reference: don't build the deprecated
+        # Enginio module (the reference passes -skip qtenginio).
+        if os.path.isdir(os.path.join(self.source_folder, "qt5", "qtenginio")):
+            args.append("-skip qtenginio")
         if cross_building(self):
             args.append(f"-extprefix {self.package_folder}")
+        if self._is_rdk_kirkstone:
+            # Mirror setup_and_build_macos_kirkstone_qt563.sh: point -hostprefix at
+            # a SEPARATE (build-local) staging dir and pass -nomake tools.
+            #
+            # -hostprefix is the decisive flag for cross builds. Without it Qt's
+            # configure sets HAVE_HOST_PATH=false, which makes QT_REL_HOST_DATA
+            # collapse onto QT_REL_INSTALL_ARCHDATA so QT_HOST_DATA points at the
+            # (empty, install) prefix. That prevents qt_build_config.prf from
+            # setting CONFIG += prefix_build, so inter-module links (e.g. Widgets
+            # -> Core) resolve libQt5Core.so via the yet-unpopulated package/lib
+            # path and fail. A distinct -hostprefix keeps QT_HOST_DATA off the
+            # install prefix, so prefix_build is enabled and module deps resolve
+            # to the build tree (<build>/qtbase/lib) during the build.
+            host_prefix = os.path.join(self.build_folder, "qt_host")
+            args.append(f"-hostprefix {host_prefix}")
+            args.append("-nomake tools")
         args.append("-v")
         if self.options.commercial:
             args.append("-commercial")
@@ -694,6 +948,15 @@ class QtConan(ConanFile):
                         f"Skipping non-existent module {module} - not adding to configure args"
                     )
 
+        # RDK Kirkstone: qtwayland is cross-built in a dedicated pass after the
+        # main make (see _rdk_build_qtwayland), mirroring the wayland step of
+        # setup_and_build_macos_kirkstone_qt563.sh. Building it inline links
+        # WaylandClient against the sysroot Qt 5.15 libQt5Gui (Qt_5_PRIVATE_API
+        # mismatch), so skip it here and build it separately against the freshly
+        # built Qt 5.6.3 libs.
+        if self._is_rdk_kirkstone and self.options.get_safe("qtwayland"):
+            args.append("-skip qtwayland")
+
         args.append("--zlib=system")
 
         # openGL
@@ -707,21 +970,25 @@ class QtConan(ConanFile):
         elif opengl == "dynamic":
             args += ["-opengl dynamic"]
 
-        # Vulkan support added in Qt 5.10
-        if Version(self.version) >= "5.10":
-            if self.options.get_safe("with_vulkan", False):
-                args.append("-vulkan")
-            else:
-                args.append("-no-vulkan")
+        # Linux windowing: the core-app Qt 5.6.3 SDK is built headless and renders
+        # through the offscreengl/OSMesa platform plugin, so xcb/X11 is not built.
+        # Match the from-source setup_and_build_linux_x86_qt563.sh, which passes
+        # -no-xcb, and make the outcome deterministic instead of relying on Qt's
+        # xcb auto-detection (which depends on X11 dev headers being absent).
+        if self.settings.os in ["Linux", "FreeBSD"] and not self.options.get_safe("with_x11", False):
+            args += ["-no-xcb"]
 
-        # openSSL
-        if not self.options.get_safe("openssl", False):
-            args += ["-no-openssl"]
+        # openSSL: the openssl option is removed for 5.6.3. Apple platforms get a
+        # working TLS stack from SecureTransport (see package_info), but Linux and
+        # FreeBSD have no native backend, so Qt must be linked against OpenSSL to
+        # produce a usable QtNetwork SSL API (QSslSocket/QSslConfiguration/
+        # QSslCertificate). Building with -no-openssl there compiles those classes
+        # out and breaks consumers. This mirrors setup_and_build_linux_x86_qt563.sh,
+        # which configures Qt with -openssl-linked. Other platforms keep SSL off.
+        if self.settings.os in ["Linux", "FreeBSD"]:
+            args += ["-openssl-linked"]
         else:
-            if self.dependencies["openssl"].options.shared:
-                args += ["-openssl-runtime"]
-            else:
-                args += ["-openssl-linked"]
+            args += ["-no-openssl"]
 
         # args.append("--iconv=" + ("gnu" if self.options.with_libiconv else "no"))# QTBUG-84708
 
@@ -733,9 +1000,11 @@ class QtConan(ConanFile):
 
         args.append("--sql-psql=" + ("yes" if self.options.get_safe("with_pq", False) else "no"))
         args.append("--sql-odbc=" + ("yes" if self.options.get_safe("with_odbc", False) else "no"))
-        # zstd support added in Qt 5.13
-        if Version(self.version) >= "5.13":
-            args.append("--zstd=" + ("yes" if self.options.get_safe("with_zstd", False) else "no"))
+        # Explicitly disable other SQL drivers to avoid configure tests failures
+        args.append("-no-sql-ibase")  # Firebird/InterBase
+        args.append("-no-sql-db2")  # IBM DB2
+        args.append("-no-sql-oci")  # Oracle
+        args.append("-no-sql-tds")  # Sybase/MS SQL Server
 
         if self.options.qtmultimedia:
             args.append("--alsa=" + ("yes" if self.options.get_safe("with_libalsa", False) else "no"))
@@ -744,33 +1013,20 @@ class QtConan(ConanFile):
 
         if self.options.with_dbus:
             args.append("-dbus-linked")
+        elif is_apple_os(self) and not cross_building(self):
+            # Match core-app local build: let Qt auto-detect D-Bus (runtime-loaded
+            # libdbus) so the QtDBus module is produced, exactly like the reference
+            # which passes no -dbus flag. Embedded/cross builds keep -no-dbus below.
+            pass
         else:
             args.append("-no-dbus")
 
-        # GSSAPI feature flag added in Qt 5.9
-        if Version(self.version) >= "5.9":
-            args.append(
-                "-feature-gssapi"
-                if self.options.get_safe("with_gssapi", False)
-                else "-no-feature-gssapi"
-            )
-
-        # Build options list based on version
         opt_list = [
             ("with_freetype", "freetype"),
             ("with_harfbuzz", "harfbuzz"),
             ("with_libjpeg", "libjpeg"),
             ("with_libpng", "libpng"),
         ]
-        # doubleconversion added in Qt 5.7
-        if Version(self.version) >= "5.7":
-            opt_list.insert(0, ("with_doubleconversion", "doubleconversion"))
-        # -no-sqlite option added in Qt 5.9
-        if Version(self.version) >= "5.9":
-            opt_list.append(("with_sqlite3", "sqlite"))
-        # libmd4c added in Qt 5.14
-        if Version(self.version) >= "5.14":
-            opt_list.append(("with_md4c", "libmd4c"))
 
         for opt, conf_arg in opt_list:
             if self.options.get_safe(opt, False):
@@ -778,72 +1034,22 @@ class QtConan(ConanFile):
                     args += ["-qt-" + conf_arg]
                 else:
                     args += ["-system-" + conf_arg]
+            elif conf_arg in ("freetype", "harfbuzz", "libjpeg", "libpng"):
+                # Qt 5.6.3 deletes these options; use Qt's bundled copies for both
+                # desktop and embedded builds. Matches core-app setup_and_build,
+                # which passes -qt-libpng/-qt-libjpeg and lets freetype/harfbuzz
+                # default to the bundled versions. Required for image decoding
+                # (PNG/JPEG) and text shaping (HarfBuzz).
+                args += ["-qt-" + conf_arg]
             else:
                 args += ["-no-" + conf_arg]
-
-        # Library variable assignment on command line requires Qt >= 5.8
-        if Version(self.version) >= "5.8":
-            libmap = [
-                ("zlib", "ZLIB"),
-                ("openssl", "OPENSSL"),
-                ("pcre2", "PCRE2"),
-                ("glib", "GLIB"),
-                # ("libiconv", "ICONV"),# QTBUG-84708
-                ("double-conversion", "DOUBLECONVERSION"),
-                ("freetype", "FREETYPE"),
-                ("fontconfig", "FONTCONFIG"),
-                ("icu", "ICU"),
-                ("harfbuzz", "HARFBUZZ"),
-                ("libjpeg", "LIBJPEG"),
-                ("libjpeg-turbo", "LIBJPEG"),
-                ("libpng", "LIBPNG"),
-                ("sqlite3", "SQLITE"),
-                ("mariadb-connector-c", "MYSQL"),
-                ("libmysqlclient", "MYSQL"),
-                ("libpq", "PSQL"),
-                ("odbc", "ODBC"),
-                ("sdl2", "SDL2"),
-                ("openal-soft", "OPENAL"),
-                ("zstd", "ZSTD"),
-                ("libalsa", "ALSA"),
-                ("xkbcommon", "XKBCOMMON"),
-                ("md4c", "LIBMD4C"),
-            ]
-            for package, var in libmap:
-                if package in [
-                    d.ref.name for d in self.dependencies.direct_host.values()
-                ]:
-                    p = self.dependencies[package]
-                    if package == "freetype":
-                        args.append(
-                            '"%s_INCDIR=%s"'
-                            % (var, p.cpp_info.aggregated_components().includedirs[-1])
-                        )
-                    args.append('"%s_LIBS=%s"' % (var, " ".join(self._gather_libs(p))))
 
         for dependency in self.dependencies.direct_host.values():
             args += [f"-I \"{s}\"" for s in dependency.cpp_info.aggregated_components().includedirs]
             args += [f"-D {s}" for s in dependency.cpp_info.aggregated_components().defines]
 
-        # QMAKE variable assignment on command line added in Qt 5.8
-        if Version(self.version) >= "5.8":
-            libdirs = [l for dependency in self.dependencies.host.values() for l in dependency.cpp_info.aggregated_components().libdirs]
-            args.append("QMAKE_LIBDIR+=\"%s\"" % " ".join(libdirs))
-            if not is_msvc(self):
-                args.append("QMAKE_RPATHLINKDIR+=\"%s\"" % ":".join(libdirs))
-
-            if "libmysqlclient" in [d.ref.name for d in self.dependencies.direct_host.values()]:
-                args.append("-mysql_config \"%s\"" % os.path.join(self.dependencies["libmysqlclient"].package_folder, "bin", "mysql_config"))
-            if "mariadb-connector-c" in [d.ref.name for d in self.dependencies.direct_host.values()]:
-                args.append("-mysql_config \"%s\"" % os.path.join(self.dependencies["mariadb-connector-c"].package_folder, "bin", "mysql_config"))
-            if "libpq" in [d.ref.name for d in self.dependencies.direct_host.values()]:
-                args.append("-psql_config \"%s\"" % os.path.join(self.dependencies["libpq"].package_folder, "bin", "pg_config"))
         if self.settings.os == "Macos":
             args += ["-no-framework"]
-            # QMAKE variable setting on command line requires Qt >= 5.8
-            if Version(self.version) >= "5.8":
-                args.append(f"QMAKE_APPLE_DEVICE_ARCHS={to_apple_arch(self)}")
-                args.append("QMAKE_CXXFLAGS+=-mmacosx-version-min=10.13")
         elif self.settings.os == "Android":
             args += [f"-android-ndk-platform android-{self.settings.os.api_level}"]
             args += [f"-android-abis {android_abi(self)}"]
@@ -857,6 +1063,13 @@ class QtConan(ConanFile):
             args += [f"-android-sdk {self.options.android_sdk}"]
         if self.options.sysroot:
             args += [f"-sysroot {self.options.sysroot}"]
+        elif self._is_rdk_kirkstone:
+            # The target sysroot is provided by the profile (tools.build:sysroot),
+            # not the recipe's sysroot option. Qt cross-compilation requires it on
+            # the configure line so qmake resolves the RDK headers/libraries.
+            rdk_sysroot = self.conf.get("tools.build:sysroot", check_type=str)
+            if rdk_sysroot:
+                args += [f"-sysroot {rdk_sysroot}"]
 
         if self.options.device:
             args += [f"-device {self.options.device}"]
@@ -866,6 +1079,12 @@ class QtConan(ConanFile):
                 if not cross_building(self, skip_x64_x86=True):
                     args += [f"-platform {xplatform_val}"]
                 else:
+                    # On a Linux build host, pin the host bootstrap tools
+                    # (moc/uic/rcc) to the native linux-g++ spec so they never
+                    # inherit the cross target toolchain, while the target is
+                    # built with the retargeted arm-rdk mkspec.
+                    if self._is_rdk_kirkstone and self._settings_build.os == "Linux":
+                        args += ["-platform linux-g++"]
                     args += [f"-xplatform {xplatform_val}"]
             else:
                 self.output.warn("host not supported: %s %s %s %s" %
@@ -873,6 +1092,8 @@ class QtConan(ConanFile):
                                   self.settings.compiler.version, self.settings.arch))
         if self.options.cross_compile:
             args += [f"-device-option CROSS_COMPILE={self.options.cross_compile}"]
+        elif self._is_rdk_kirkstone:
+            args += [f"-device-option CROSS_COMPILE={self._rdk_cross_prefix}"]
 
         def _getenvpath(var):
             val = os.getenv(var)
@@ -881,7 +1102,10 @@ class QtConan(ConanFile):
                 os.environ[var] = val
             return val
 
-        if not is_msvc(self):
+        # Skip on RDK: setting QMAKE_CC/QMAKE_CXX on the configure line applies
+        # them globally and clobbers Qt's host bootstrap compiler. The RDK target
+        # compiler comes from the target mkspec's CROSS_COMPILE prefix instead.
+        if not is_msvc(self) and not self._is_rdk_kirkstone:
             value = _getenvpath("CC")
             if value:
                 args += ['QMAKE_CC="' + value + '"',
@@ -894,29 +1118,24 @@ class QtConan(ConanFile):
                          'QMAKE_LINK="' + value + '"',
                          'QMAKE_LINK_SHLIB="' + value + '"']
 
-        if self._settings_build.os == "Linux" and self.settings.compiler == "clang":
-            args += ['QMAKE_CXXFLAGS+="-ftemplate-depth=1024"']
+        # Unlike Qt 5.15+, Qt 5.6.3's configure does not accept qmake-style variable
+        # assignments (e.g. QMAKE_CXXFLAGS+=...) on the command line: its argument
+        # parser rejects any non-option token with "unknown argument". Collect the
+        # extra compiler/linker flags here and inject them into the platform mkspec's
+        # qmake.conf before configuring, which is the mechanism Qt 5.6.3 supports.
+        extra_cflags = []
+        extra_cxxflags = []
+        extra_ldflags = []
 
-        if self._settings_build.os == "Macos":
-            # On macOS, SIP resets DYLD_LIBRARY_PATH injected by VirtualBuildEnv & VirtualRunEnv.
-            # Qt builds several executables (moc etc) which are called later on during build of
-            # libraries, and these executables link to several external dependencies in requirements().
-            # If these external libs are shared, moc calls fail because its dylib dependencies
-            # are not found (unless they can be accidentally found in system paths).
-            # So the workaround is to add libdirs of these external dependencies to LC_RPATH
-            # of runtime artifacts.
-            # QMAKE_RPATHDIR variable assignment requires Qt >= 5.8
-            if not cross_building(self) and Version(self.version) >= "5.8":
-                for libpath in VirtualRunEnv(self).vars().get("DYLD_LIBRARY_PATH", "").split(":"):
-                    # see https://doc.qt.io/qt-5/qmake-variable-reference.html#qmake-rpathdir
-                    args += [f'QMAKE_RPATHDIR+="{libpath}"']
+        if self._settings_build.os == "Linux" and self.settings.compiler == "clang":
+            extra_cxxflags.append("-ftemplate-depth=1024")
 
         if self.settings.compiler == "apple-clang" and self.options.qtmultimedia:
             # XCode 14.3 finally removes std::unary_function, so compilation fails
             # when using newer SDKs when using C++17 or higher.
             # This macro re-enables them. Should be safe to pass this macro even
             # in earlier versions, as it would have no effect.
-            args += ['QMAKE_CXXFLAGS+="-D_LIBCPP_ENABLE_CXX17_REMOVED_UNARY_BINARY_FUNCTION=1"']
+            extra_cxxflags.append("-D_LIBCPP_ENABLE_CXX17_REMOVED_UNARY_BINARY_FUNCTION=1")
 
         if self.options.qtwebengine and self.settings.os in ["Linux", "FreeBSD"]:
             args += ["-qt-webengine-ffmpeg",
@@ -928,11 +1147,61 @@ class QtConan(ConanFile):
 
         cxxflags = self.conf.get("tools.build:cxxflags", check_type=list)
         if cxxflags:
-            args += [f'QMAKE_CXXFLAGS+="{" ".join(cxxflags)}"']
+            extra_cxxflags += cxxflags
+
+        # C sources (e.g. bundled freetype) need the same ARM march/float-ABI
+        # flags; without them gnu/stubs-32.h selects the soft-float stubs header
+        # that the armv7hf sysroot does not ship.
+        cflags = self.conf.get("tools.build:cflags", check_type=list)
+        if cflags:
+            extra_cflags += cflags
 
         ldflags = self.conf.get("tools.build:sharedlinkflags", check_type=list)
         if ldflags:
-            args += [f'QMAKE_LFLAGS+="{" ".join(ldflags)}"']
+            extra_ldflags += ldflags
+
+        if extra_cflags or extra_cxxflags or extra_ldflags:
+            xplatform_val = None if self.options.device else self._xplatform()
+            if xplatform_val:
+                qmake_conf = os.path.join(self.source_folder, "qt5", "qtbase",
+                                          "mkspecs", xplatform_val, "qmake.conf")
+                injected = ["",
+                            "# Injected by Conan recipe: Qt 5.6.3 configure rejects "
+                            "QMAKE_*+= assignments on the command line."]
+                if extra_cflags:
+                    injected.append("QMAKE_CFLAGS += %s" % " ".join(extra_cflags))
+                if extra_cxxflags:
+                    injected.append("QMAKE_CXXFLAGS += %s" % " ".join(extra_cxxflags))
+                if extra_ldflags:
+                    injected.append("QMAKE_LFLAGS += %s" % " ".join(extra_ldflags))
+                with open(qmake_conf, "a", encoding="utf-8") as conf_file:
+                    conf_file.write("\n".join(injected) + "\n")
+            else:
+                self.output.warn(
+                    "Cannot inject extra compiler/linker flags into a mkspec: "
+                    "unknown xplatform for %s/%s" % (self.settings.os, self.settings.compiler))
+
+        if self._is_rdk_kirkstone and not self.options.device:
+            xplatform_val = self._xplatform()
+            if xplatform_val:
+                rdk_qmake_conf = os.path.join(self.source_folder, "qt5", "qtbase",
+                                              "mkspecs", xplatform_val, "qmake.conf")
+                # Retarget the generic arm-gnueabi mkspec at the RDK cross prefix
+                # (arm-rdk-linux-gnueabi-), then add the two tweaks the local_sdk
+                # build applies to its linux-rdk-armv7-g++ spec: declare the ARM
+                # target arch so Qt compiles the NEON/ARM source files, and clear
+                # QMAKE_LFLAGS_NOUNDEF so private-class symbols with hidden
+                # visibility link. Mirrors setup_and_build_macos_kirkstone_qt563.sh.
+                replace_in_file(self, rdk_qmake_conf, "arm-linux-gnueabi-",
+                                self._rdk_cross_prefix, strict=False)
+                with open(rdk_qmake_conf, "a", encoding="utf-8") as conf_file:
+                    # Blank QMAKE_CFLAGS_ISYSTEM (same as OpenEmbedded meta-qt5): the
+                    # RDK toolchain keeps its libstdc++ headers under the target
+                    # sysroot's usr/include/c++, so Qt's default -isystem for
+                    # sysroot dep includes reorders usr/include ahead of the C++
+                    # dir and breaks <cstdlib>'s "#include_next <stdlib.h>". Using
+                    # plain -I preserves the built-in system search order.
+                    conf_file.write("\nQMAKE_TARGET.arch = arm\nQMAKE_LFLAGS_NOUNDEF =\nQMAKE_CFLAGS_ISYSTEM =\n")
 
         os.mkdir("build_folder")
         with chdir(self, "build_folder"):
@@ -941,7 +1210,173 @@ class QtConan(ConanFile):
                 save(self, ".qmake.super" , "")
 
             self.run("%s %s" % (os.path.join(self.source_folder, "qt5", "configure"), " ".join(args)))
-            self.run(self._make_program())
+
+            if self._is_rdk_kirkstone:
+                self._rdk_staged_make()
+            else:
+                self.run(self._make_program())
+
+    def _rdk_staged_make(self):
+        # Qt's cross prefix build on Linux resolves inter-module libraries via the
+        # install prefix ($$[QT_INSTALL_LIBS] = <package>/lib/libQt5X.so), not the
+        # build tree, yet those libs are not installed until package(). Reproduce
+        # the phased build of setup_and_build_widget_linux_qt563.sh: populate
+        # <package>/lib with symlinks to every built Qt lib between make passes so
+        # links resolve, then drop the symlinks so package() installs real libs.
+        make = self._make_program()
+        build_root = os.path.join(self.build_folder, "build_folder")
+        qtbase_lib = os.path.join(build_root, "qtbase", "lib")
+        package_lib = os.path.join(self.package_folder, "lib")
+
+        def _clear_package_lib():
+            if os.path.islink(package_lib):
+                os.unlink(package_lib)
+            elif os.path.isdir(package_lib):
+                shutil.rmtree(package_lib)
+
+        def _aggregate():
+            os.makedirs(package_lib, exist_ok=True)
+            for so in glob.glob(os.path.join(build_root, "**", "libQt5*.so*"), recursive=True):
+                dest = os.path.join(package_lib, os.path.basename(so))
+                if not os.path.lexists(dest):
+                    os.symlink(so, dest)
+            # Qt 5.15 sysroot .prl files reference libQt5QmlModels, which does not
+            # exist in Qt 5.6.3 (its content is part of libQt5Qml). Provide a
+            # compat symlink so qtdeclarative/qmltest links against it.
+            qml = os.path.join(package_lib, "libQt5Qml.so.5.6.3")
+            if os.path.exists(qml):
+                for name in ("libQt5QmlModels.so", "libQt5QmlModels.so.5.6.3",
+                             "libQt5QmlModels.so.5.6", "libQt5QmlModels.so.5"):
+                    dest = os.path.join(package_lib, name)
+                    if not os.path.lexists(dest):
+                        os.symlink(qml, dest)
+
+        def _make(target="", keep_going=False):
+            cmd = make
+            if target:
+                cmd += " " + target
+            if keep_going:
+                cmd += " -k"
+            try:
+                self.run(cmd)
+            except ConanException:
+                # -k passes tolerate host-only subtargets (qmldevtools, qdoc, ...)
+                # that Qt 5.6.3 cannot cross-compile; required libs are verified
+                # afterwards.
+                if not keep_going:
+                    raise
+
+        # Phase 1: build qtbase with <package>/lib pointing at the qtbase build
+        # lib so intra-qtbase links (Widgets -> Core, ...) resolve, then convert
+        # <package>/lib to a real directory.
+        os.makedirs(qtbase_lib, exist_ok=True)
+        os.makedirs(self.package_folder, exist_ok=True)
+        _clear_package_lib()
+        os.symlink(qtbase_lib, package_lib)
+        _make("module-qtbase")
+        os.unlink(package_lib)
+        _aggregate()
+
+        # Phase 2: build the remaining modules. Cross-repo links (qtdeclarative ->
+        # qtbase, Qml/QmlModels) fail until every module lib is visible, so keep
+        # going and re-aggregate between passes.
+        _make(keep_going=True)
+        _aggregate()
+        _make(keep_going=True)
+        _aggregate()
+
+        # qtwayland is -skip'd from the main configure; cross-build it in a
+        # dedicated pass (mirrors setup_and_build_macos_kirkstone_qt563.sh) so
+        # WaylandClient links the built Qt 5.6.3 libs, then aggregate its libs.
+        if self.options.get_safe("qtwayland"):
+            self._rdk_build_qtwayland(build_root)
+            _aggregate()
+
+        # Verify the modules this configuration needs actually built (the -k
+        # passes tolerate unbuildable host-only subtargets).
+        required = ["libQt5Core"]
+        if self.options.gui:
+            required.append("libQt5Gui")
+        if self.options.widgets:
+            required.append("libQt5Widgets")
+        if self.options.get_safe("qtdeclarative"):
+            required += ["libQt5Qml", "libQt5Quick"]
+        if self.options.get_safe("qtwayland"):
+            required.append("libQt5WaylandClient")
+        # WebSockets and Svg ship in the widget and are linked by epg, so a
+        # silent -k build failure of either must fail here, not surface later as
+        # a consumer "Cannot obtain 'location'" error.
+        if self.options.get_safe("qtwebsockets"):
+            required.append("libQt5WebSockets")
+        if self.options.get_safe("qtsvg"):
+            required.append("libQt5Svg")
+        missing = [lib for lib in required
+                   if not glob.glob(os.path.join(build_root, "**", lib + ".so*"), recursive=True)]
+        if missing:
+            raise ConanException(
+                "RDK Qt cross build did not produce required libraries: %s" % ", ".join(missing))
+
+        # Drop the temporary symlinks so package() `make install` writes real libs.
+        for link in glob.glob(os.path.join(package_lib, "*")):
+            if os.path.islink(link):
+                os.unlink(link)
+
+    def _rdk_build_qtwayland(self, build_root):
+        # Cross-build qtwayland separately, mirroring the wayland step of
+        # setup_and_build_macos_kirkstone_qt563.sh. QMAKE_LIBDIR_QT points the
+        # linker at the freshly built Qt 5.6.3 libs (build/qtbase/lib) so
+        # WaylandClient is not linked against the sysroot Qt 5.15 libQt5Gui
+        # (which carries mismatched Qt_5_PRIVATE_API symbol versions).
+        make = self._make_program()
+        host_qmake = os.path.join(build_root, "qtbase", "bin", "qmake")
+        syncqt = os.path.join(self.source_folder, "qt5", "qtbase", "bin", "syncqt.pl")
+        qtwayland_src = os.path.join(self.source_folder, "qt5", "qtwayland")
+        qtbase_lib = os.path.join(build_root, "qtbase", "lib")
+        wl_build = os.path.join(build_root, "qtwayland")
+        # tool_requires("wayland") puts wayland-scanner on PATH only inside
+        # self.run's build env, not this recipe process, so shutil.which misses
+        # it; resolve the executable from the build-context dependency.
+        scanner = shutil.which("wayland-scanner")
+        if not scanner:
+            try:
+                wl_dep = self.dependencies.build["wayland"]
+                for _bindir in wl_dep.cpp_info.bindirs:
+                    _cand = os.path.join(_bindir, "wayland-scanner")
+                    if os.path.isfile(_cand):
+                        scanner = _cand
+                        break
+            except Exception:
+                pass
+
+        if not os.path.isfile(host_qmake):
+            raise ConanException(f"qtwayland build: host qmake not found at {host_qmake}")
+        if not os.path.isdir(qtwayland_src):
+            raise ConanException(f"qtwayland build: source not found at {qtwayland_src}")
+        if not scanner:
+            raise ConanException("qtwayland build: wayland-scanner not found "
+                                 "(tool_requires wayland provides it).")
+
+        os.makedirs(wl_build, exist_ok=True)
+        with chdir(self, wl_build):
+            self.run(f'"{host_qmake}" "{os.path.join(qtwayland_src, "qtwayland.pro")}" '
+                     f'"QMAKE_WAYLAND_SCANNER={scanner}" "QMAKE_LIBDIR_QT={qtbase_lib}"')
+            # syncqt generates the flat QtWaylandClient forwarding headers
+            # (qtwaylandclientglobal.h, ...) the Sky plugins compile against.
+            if os.path.isfile(syncqt):
+                self.run(f'perl "{syncqt}" -version {self.version} -module QtWaylandClient '
+                         f'-outdir "{wl_build}" "{qtwayland_src}"', ignore_errors=True)
+            # Recurse to emit the sub-Makefiles, then build the client lib and
+            # plugins with targeted makes. src/client is fatal (it produces
+            # libQt5WaylandClient, verified below); plugins are best-effort.
+            self.run(f"{make} sub-src -k", ignore_errors=True)
+            self.run(f'{make} -C "{os.path.join(wl_build, "src", "client")}"')
+            self.run(f'{make} -C "{os.path.join(wl_build, "src", "plugins", "platforms")}"',
+                     ignore_errors=True)
+            for _egl in (os.path.join(wl_build, "src", "hardwareintegration", "client", "wayland-egl"),
+                         os.path.join(wl_build, "src", "plugins", "hardwareintegration", "client", "wayland-egl")):
+                if os.path.isdir(_egl):
+                    self.run(f'{make} -C "{_egl}"', ignore_errors=True)
+                    break
 
     @property
     def _cmake_core_extras_file(self):
@@ -960,16 +1395,160 @@ class QtConan(ConanFile):
 
     def package(self):
         with chdir(self, "build_folder"):
-            self.run(f"{self._make_program()} install")
+            if self._is_rdk_kirkstone:
+                # -k: tolerate host-only subtargets (qmldevtools, qdoc, ...) that
+                # Qt 5.6.3 cannot cross-compile; the required module libs were
+                # verified in build().
+                self.run(f"{self._make_program()} install -k", ignore_errors=True)
+            else:
+                self.run(f"{self._make_program()} install")
+        if self._is_rdk_kirkstone and self.options.get_safe("qtwayland"):
+            # qtwayland was -skip'd from the main build and cross-built separately
+            # (see _rdk_build_qtwayland), so the main `make install` doesn't know
+            # about it. Install the built client lib + plugins into the package.
+            wl_build = os.path.join(self.build_folder, "build_folder", "qtwayland")
+            for _sub in (os.path.join("src", "client"),
+                         os.path.join("src", "plugins", "platforms"),
+                         os.path.join("src", "hardwareintegration", "client", "wayland-egl"),
+                         os.path.join("src", "plugins", "hardwareintegration", "client", "wayland-egl")):
+                _d = os.path.join(wl_build, _sub)
+                if os.path.isdir(_d):
+                    self.run(f'{self._make_program()} -C "{_d}" install', ignore_errors=True)
+        if self._is_rdk_kirkstone:
+            # make install -k can skip a module's install subtarget (e.g.
+            # qtwayland) while its libs were built. Backfill any built module
+            # libs the install missed so the package matches the components
+            # package_info() declares (Qt5WaylandClient, ...) and CMakeDeps can
+            # resolve their location.
+            build_root = os.path.join(self.build_folder, "build_folder")
+            package_lib = os.path.join(self.package_folder, "lib")
+            os.makedirs(package_lib, exist_ok=True)
+            for _so in glob.glob(os.path.join(build_root, "**", "libQt5*.so*"), recursive=True):
+                _dest = os.path.join(package_lib, os.path.basename(_so))
+                if os.path.lexists(_dest):
+                    continue
+                if os.path.islink(_so):
+                    os.symlink(os.readlink(_so), _dest)
+                else:
+                    shutil.copy2(_so, _dest)
+        if self._is_rdk_kirkstone:
+            # Conan's CMakeConfigDeps deduces a shared lib's on-disk location from
+            # the bare `lib<name>.so` dev symlink. `make install -k` and the
+            # backfill above can leave a module with only its versioned files
+            # (libQt5X.so.5.6.3) on some build hosts, which makes deduce_location
+            # fail with "Cannot obtain 'location'". Normalize the SONAME chain so
+            # every packaged Qt5 lib exposes .so / .so.5 / .so.5.6 -> .so.5.6.3.
+            package_lib = os.path.join(self.package_folder, "lib")
+            v = Version(self.version)
+            _full = f".so.{self.version}"
+            for _real in glob.glob(os.path.join(package_lib, f"libQt5*{_full}")):
+                if os.path.islink(_real):
+                    continue
+                _stem = os.path.basename(_real)[:-len(_full)] + ".so"
+                for _suffix in ("", f".{v.major}", f".{v.major}.{v.minor}"):
+                    _dest = os.path.join(package_lib, _stem + _suffix)
+                    if os.path.lexists(_dest):
+                        if os.path.islink(_dest) and not os.path.exists(_dest):
+                            os.unlink(_dest)  # replace a dangling symlink
+                        else:
+                            continue
+                    os.symlink(os.path.basename(_real), _dest)
+        if self._is_rdk_kirkstone:
+            # -hostprefix diverts host data (mkspecs) to the host prefix, so
+            # make install leaves <package>/mkspecs empty; package_info()
+            # asserts it exists. Copy the installed host mkspecs (falling back
+            # to the build/source trees) into the package.
+            pkg_mkspecs = os.path.join(self.package_folder, "mkspecs")
+            if not os.path.isdir(pkg_mkspecs):
+                host_prefix = os.path.join(self.build_folder, "qt_host")
+                for _src in (os.path.join(host_prefix, "mkspecs"),
+                             os.path.join(self.build_folder, "build_folder", "qtbase", "mkspecs"),
+                             os.path.join(self.source_folder, "qt5", "qtbase", "mkspecs")):
+                    if os.path.isdir(_src):
+                        shutil.copytree(_src, pkg_mkspecs, symlinks=True)
+                        break
+        if self._is_rdk_kirkstone:
+            # -hostprefix diverts the host tools (qmake, moc, rcc, uic,
+            # qmlimportscanner, ...) to the host prefix, so <package>/bin lacks
+            # them. Consumers run these host-native tools at build time
+            # (AUTOMOC/AUTORCC/AUTOUIC and the imported Qt5::* executables), so
+            # copy them into the package bin dir.
+            host_bin = os.path.join(self.build_folder, "qt_host", "bin")
+            pkg_bin = os.path.join(self.package_folder, "bin")
+            if os.path.isdir(host_bin):
+                os.makedirs(pkg_bin, exist_ok=True)
+                for _f in os.listdir(host_bin):
+                    _src = os.path.join(host_bin, _f)
+                    _dst = os.path.join(pkg_bin, _f)
+                    if os.path.lexists(_dst):
+                        continue
+                    if os.path.islink(_src):
+                        os.symlink(os.readlink(_src), _dst)
+                    elif os.path.isfile(_src):
+                        shutil.copy2(_src, _dst)
+        if self._is_rdk_kirkstone:
+            # Qt 5.15 sysroot .prl files reference libQt5QmlModels, absent in Qt
+            # 5.6.3 (folded into libQt5Qml). Recreate the compat symlinks in the
+            # packaged lib dir so consumers linking QtQuick resolve them.
+            package_lib = os.path.join(self.package_folder, "lib")
+            qml = os.path.join(package_lib, "libQt5Qml.so.5.6.3")
+            if os.path.exists(qml):
+                for name in ("libQt5QmlModels.so", "libQt5QmlModels.so.5.6.3",
+                             "libQt5QmlModels.so.5.6", "libQt5QmlModels.so.5"):
+                    dest = os.path.join(package_lib, name)
+                    if not os.path.lexists(dest):
+                        os.symlink("libQt5Qml.so.5.6.3", dest)
         save(self, os.path.join(self.package_folder, "bin", "qt.conf"), """[Paths]
 Prefix = ..""")
+        # Apply the header polyfills used by core-app setup_and_build
+        # (qt563_install.patch) so the packaged headers match local_sdk and
+        # can build epg / modern C++ consumers. Same invocation as the
+        # scripts: patch -p1 --forward --ignore-whitespace at the prefix.
+        install_patch = os.path.join(self.recipe_folder, "qt563_install.patch")
+        self.run(f'patch -p1 --batch --forward --ignore-whitespace -d "{self.package_folder}" < "{install_patch}" || true')
+        # qpa is a symlinked dir (not represented in the patch); recreate it.
+        qpa_targets = glob.glob(os.path.join(self.package_folder, "include", "QtGui", "*", "QtGui", "qpa"))
+        if qpa_targets:
+            for link in [os.path.join(self.package_folder, "include", "qpa"),
+                         os.path.join(self.package_folder, "include", "QtGui", "qpa")]:
+                if not os.path.lexists(link):
+                    os.symlink(qpa_targets[0], link)
+        # Linux: build and package the OSMesa-based offscreen GL platform plugin
+        # (QT_QPA_PLATFORM=offscreengl) so component tests run headless without
+        # X11/EGL. Mirrors setup_and_build_linux_x86_qt563.sh: compile the
+        # vendored plugin with the packaged qmake; qt_plugin installs the .so
+        # straight into <prefix>/plugins/platforms. OSMesa is dlopen'd at runtime
+        # (libosmesa6), so there is no link-time dependency. Skipped for the RDK
+        # Kirkstone cross target, which renders on-device via wayland-egl.
+        if (self.settings.os == "Linux" and not self._is_rdk_kirkstone
+                and self.options.gui and self.options.get_safe("opengl", "no") != "no"):
+            osgl_src = os.path.join(self.recipe_folder, "addons", "offscreengl-src")
+            osgl_build = os.path.join(self.build_folder, "offscreengl-build")
+            rmdir(self, osgl_build)
+            os.makedirs(osgl_build)
+            qmake = os.path.join(self.package_folder, "bin", "qmake")
+            with chdir(self, osgl_build):
+                self.run(f'"{qmake}" "{os.path.join(osgl_src, "offscreengl.pro")}" QMAKE_CXXFLAGS+="-std=gnu++14"')
+                self.run(self._make_program())
+        # RDK Kirkstone ARMv7: cross-compile the NEON/libproxy stubs and the
+        # Sky wayland shell/input plugins into the package, reproducing the
+        # neon-lib, libproxy and wayland steps of the local_sdk build.
+        if self._is_rdk_kirkstone:
+            self._package_rdk_kirkstone_extras()
         copy(self, "*LICENSE*", os.path.join(self.source_folder, "qt5/"), os.path.join(self.package_folder, "licenses"),
              excludes="qtbase/examples/*")
         for module in self._submodules:
             if not self.options.get_safe(module):
                 rmdir(self, os.path.join(self.package_folder, "licenses", module))
         rmdir(self, os.path.join(self.package_folder, "lib", "pkgconfig"))
-        for mask in ["Find*.cmake", "*Config.cmake", "*-config.cmake"]:
+        # For the 5.6.3 SDK/drop-in use case, core-app consumes Qt via a raw
+        # find_package(Qt5 ...) against lib/cmake (not Conan CMakeDeps), so the
+        # qmake-generated Qt5*Config.cmake files must be retained. CMakeDeps
+        # consumers ignore the in-package configs (they use the generated ones
+        # under the build folder), so keeping them is safe and makes the package
+        # drop-in ready without manual supplementation from the build tree.
+        cmake_strip_masks = ["Find*.cmake"]
+        for mask in cmake_strip_masks:
             rm(self, mask, self.package_folder, recursive=True)
         rm(self, "*.la*", os.path.join(self.package_folder, "lib"), recursive=True)
         rm(self, "*.pdb*", os.path.join(self.package_folder, "lib"), recursive=True)
@@ -980,10 +1559,9 @@ Prefix = ..""")
         for fl in glob.glob(os.path.join(self.package_folder, "lib", "*Qt5Bootstrap*")):
             os.remove(fl)
 
-        for m in os.listdir(os.path.join(self.package_folder, "lib", "cmake")):
-            module = os.path.join(self.package_folder, "lib", "cmake", m, f"{m}Macros.cmake")
-            if not os.path.isfile(module):
-                rmdir(self, os.path.join(self.package_folder, "lib", "cmake", m))
+        # Keep every qmake cmake module dir for the 5.6.3 SDK drop-in (Network,
+        # Sql, Test, WebSockets, Xml, ... have no <module>Macros.cmake and would
+        # otherwise be removed, breaking raw find_package(Qt5 COMPONENTS ...)).
 
         extension = ""
         if self._settings_build.os == "Windows":
@@ -1086,6 +1664,223 @@ Prefix = ..""")
         if self.options.qtscxml:
             _create_private_module("Scxml", ["Scxml", "Qml"])
 
+    def _package_rdk_kirkstone_extras(self):
+        # Cross-compile the ARM stubs and Sky wayland plugins that the local_sdk
+        # build (setup_and_build_macos_kirkstone_qt563.sh) layers on top of the Qt
+        # install so the packaged Qt is a drop-in replacement for the device.
+        lib_dir = os.path.join(self.package_folder, "lib")
+        execs = self.conf.get("tools.build:compiler_executables", default={}, check_type=dict)
+        cross_cc = execs.get("c")
+        sysroot = self.conf.get("tools.build:sysroot", check_type=str)
+        if not cross_cc or not sysroot:
+            raise ConanException("RDK Kirkstone build requires tools.build:compiler_executables "
+                                 "and tools.build:sysroot to be set by the profile.")
+        arm_flags = "-march=armv7-a -mthumb -mfpu=neon -mfloat-abi=hard"
+        stubs_dir = os.path.join(self.recipe_folder, "addons", "stubs")
+
+        # --- neon-lib: libQt5GuiNeon.so stub -----------------------------------
+        # libQt5Gui.so.5 built with NEON references ARMv8/NEON symbols the ARMv7
+        # toolchain does not emit; this stub satisfies the dynamic linker (Qt's
+        # runtime feature detection never calls them on non-NEON hardware).
+        neon_lib = os.path.join(lib_dir, "libQt5GuiNeon.so")
+        self.run(f'"{cross_cc}" -shared -fPIC {arm_flags} '
+                 f'-o "{neon_lib}" "{os.path.join(stubs_dir, "neon_stub.c")}" '
+                 f'--sysroot="{sysroot}"')
+
+        # Add libQt5GuiNeon.so to libQt5Gui's DT_NEEDED so it is pulled in at
+        # runtime. patchelf is optional; warn (do not fail) if unavailable, matching
+        # the local_sdk build.
+        gui_lib = None
+        for cand in sorted(glob.glob(os.path.join(lib_dir, "libQt5Gui.so.5*"))):
+            if os.path.isfile(cand) and not os.path.islink(cand):
+                gui_lib = cand
+                break
+        if gui_lib and shutil.which("patchelf"):
+            needed = StringIO()
+            try:
+                self.run(f'patchelf --print-needed "{gui_lib}"', needed)
+            except ConanException:
+                pass
+            if "libQt5GuiNeon.so" not in needed.getvalue():
+                self.run(f'patchelf --add-needed libQt5GuiNeon.so "{gui_lib}"')
+        elif not shutil.which("patchelf"):
+            self.output.warning("patchelf not found; libQt5Gui will not DT_NEED libQt5GuiNeon.so.")
+
+        # --- libproxy: stub libproxy.so.1 --------------------------------------
+        # libQt5Network links px_proxy_factory_* which is absent on RDK Kirkstone.
+        libproxy = os.path.join(lib_dir, "libproxy.so.1")
+        self.run(f'"{cross_cc}" -shared -fPIC {arm_flags} -Wl,-soname,libproxy.so.1 '
+                 f'-o "{libproxy}" "{os.path.join(stubs_dir, "libproxy_stub.c")}" '
+                 f'--sysroot="{sysroot}"')
+
+        # --- libqt_wl_protocols.so ---------------------------------------------
+        # The bundled wayland platform plugin dlopen's the wire-protocol symbols
+        # generated by qtwayland (wayland-*-protocol.c under the qtwayland build).
+        # Those generated sources only exist while Qt is built, so compile the
+        # aggregate protocol library here (mirrors the local_sdk package-widget
+        # step) instead of leaving it to the consumer.
+        self._package_rdk_wl_protocols(lib_dir, cross_cc, sysroot, arm_flags)
+
+        # --- qtwayland module .pri files ---------------------------------------
+        # The Sky plugins' qmake (load(qt_plugin) + PLUGIN_TYPE=...) needs a module
+        # that claims their plugin type via MODULE_PLUGIN_TYPES. That declaration
+        # lives in mkspecs/modules/qt_lib_waylandclient.pri, generated by the
+        # qtwayland build but not installed by the targeted `make -C src/... install`
+        # above. Copy it (and its _private counterpart) into the package mkspecs so
+        # qmake resolves QT += waylandclient-private and claims the plugin types.
+        wl_mkspecs = os.path.join(self.build_folder, "build_folder", "qtwayland", "mkspecs")
+        pkg_modules = os.path.join(self.package_folder, "mkspecs", "modules")
+        os.makedirs(pkg_modules, exist_ok=True)
+        for _pri in ("qt_lib_waylandclient.pri", "qt_lib_waylandclient_private.pri"):
+            for _srcdir in (os.path.join(wl_mkspecs, "modules-inst"),
+                            os.path.join(wl_mkspecs, "modules")):
+                _src = os.path.join(_srcdir, _pri)
+                if os.path.isfile(_src):
+                    shutil.copy2(_src, os.path.join(pkg_modules, _pri))
+                    break
+        # Qt 5.6.3's qtwayland omits wayland-shell-integration from the
+        # waylandclient module's plugin_types, so load(qt_plugin) rejects the
+        # wl-simple-shell plugin ("No module claims plugin type"). Inject it,
+        # mirroring the sed in setup_and_build_macos_kirkstone_qt563.sh.
+        _client_pri = os.path.join(pkg_modules, "qt_lib_waylandclient.pri")
+        if os.path.isfile(_client_pri):
+            _content = load(self, _client_pri)
+            if "wayland-shell-integration" not in _content:
+                save(self, _client_pri, _content.replace(
+                    "QT.waylandclient.plugin_types =",
+                    "QT.waylandclient.plugin_types = wayland-shell-integration", 1))
+
+        # --- Sky wayland shell / input-device integration plugins --------------
+        self._build_rdk_wayland_plugin(
+            name="wl-simple-shell",
+            plugin_type="wayland-shell-integration",
+            src_dir=os.path.join(self.recipe_folder, "addons", "wl-simple-shell-src"),
+            protocols=[("simpleshell.xml", "simple-shell"), ("skyshell.xml", "skyq-shell")],
+            pro_body=_WL_SIMPLE_SHELL_PRO,
+        )
+        self._build_rdk_wayland_plugin(
+            name="skyq-input",
+            plugin_type="wayland-inputdevice-integration",
+            src_dir=os.path.join(self.recipe_folder, "addons", "skyq-input-src"),
+            protocols=[("skyq-input.xml", "skyq-input")],
+            pro_body=_SKYQ_INPUT_PRO,
+        )
+
+    def _package_rdk_wl_protocols(self, lib_dir, cross_cc, sysroot, arm_flags):
+        # Cross-compile libqt_wl_protocols.so from the wayland wire-protocol
+        # sources qtwayland generated during the build. Non-fatal: warn (do not
+        # fail) if the generated sources are missing, matching the local_sdk build.
+        client_dirs = glob.glob(
+            os.path.join(self.build_folder, "**", "qtwayland", "**", "src", "client"),
+            recursive=True)
+        proto_srcs = []
+        for d in client_dirs:
+            proto_srcs = glob.glob(os.path.join(d, "wayland-*-protocol.c"))
+            if proto_srcs:
+                break
+        if not proto_srcs:
+            self.output.warning(
+                "Skipping libqt_wl_protocols.so: no wayland-*-protocol.c sources "
+                "found under the qtwayland build.")
+            return
+        out = os.path.join(lib_dir, "libqt_wl_protocols.so")
+        quoted_srcs = " ".join(f'"{s}"' for s in proto_srcs)
+        try:
+            self.run(f'"{cross_cc}" --sysroot="{sysroot}" {arm_flags} '
+                     f'-shared -fPIC -o "{out}" {quoted_srcs} -lwayland-client')
+        except ConanException:
+            self.output.warning("libqt_wl_protocols.so build failed; it will not be packaged.")
+
+    def _build_rdk_wayland_plugin(self, name, plugin_type, src_dir, protocols, pro_body):        # Generate the wayland-scanner / qtwaylandscanner protocol glue and build
+        # the plugin with the packaged (cross) qmake, then place the resulting ARM
+        # .so under <prefix>/plugins/<plugin_type>/. Non-fatal on failure, matching
+        # the local_sdk build which only warns for these plugins.
+        qmake = os.path.join(self.package_folder, "bin", "qmake")
+        qtws = os.path.join(self.package_folder, "bin", "qtwaylandscanner")
+        if not os.path.isfile(qtws):
+            # qtwaylandscanner is built by the qtwayland pass into the build tree
+            # (not the -hostprefix). Try its known location first, then fall back
+            # to a recursive search.
+            _direct = os.path.join(self.build_folder, "build_folder", "qtwayland",
+                                   "bin", "qtwaylandscanner")
+            if os.path.isfile(_direct):
+                qtws = _direct
+            else:
+                found = glob.glob(os.path.join(self.build_folder, "**", "qtwaylandscanner"), recursive=True)
+                qtws = found[0] if found else qtws
+        # tool_requires("wayland") is only on PATH inside self.run, not this recipe
+        # process, so shutil.which misses wayland-scanner; resolve it from the
+        # build-context dependency (mirrors _rdk_build_qtwayland).
+        wscan = shutil.which("wayland-scanner")
+        if not wscan:
+            try:
+                wl_dep = self.dependencies.build["wayland"]
+                for _bindir in wl_dep.cpp_info.bindirs:
+                    _cand = os.path.join(_bindir, "wayland-scanner")
+                    if os.path.isfile(_cand):
+                        wscan = _cand
+                        break
+            except Exception:
+                pass
+        if not (os.path.isfile(qmake) and wscan and os.path.isfile(qtws)):
+            self.output.warning(
+                f"Skipping {name} plugin: missing tool "
+                f"(qmake={os.path.isfile(qmake)}, wayland-scanner={bool(wscan)}, "
+                f"qtwaylandscanner={os.path.isfile(qtws)}).")
+            return
+
+        stage = os.path.join(self.build_folder, f"{name}-build")
+        rmdir(self, stage)
+        os.makedirs(stage)
+        for pattern in ("*.cpp", "*.h", "*.json", "*.xml"):
+            for f in glob.glob(os.path.join(src_dir, pattern)):
+                shutil.copy(f, stage)
+        save(self, os.path.join(stage, ".qmake.conf"),
+             "load(qt_build_config)\nMODULE_VERSION = 5.6.3\n")
+        save(self, os.path.join(stage, f"{name}.pro"), pro_body)
+
+        try:
+            with chdir(self, stage):
+                for xml, base in protocols:
+                    self.run(f'"{wscan}" client-header "{xml}" wayland-{base}-client-protocol.h')
+                    self.run(f'"{wscan}" code "{xml}" wayland-{base}-protocol.c')
+                    self.run(f'"{qtws}" client-header "{xml}" "" > qwayland-{base}.h')
+                    self.run(f'"{qtws}" client-code "{xml}" "" > qwayland-{base}.cpp')
+                # The standalone plugin build doesn't inherit the main build's
+                # in-tree .qmake.cache, so the cross toolchain's --sysroot is not
+                # applied and <cstddef> etc. resolve against the host /usr/include.
+                # Pass the target sysroot explicitly (the in-tree build the .sh
+                # does gets it from the device mkspec).
+                qmake_cmd = f'"{qmake}" "{os.path.join(stage, name + ".pro")}"'
+                rdk_sysroot = self.conf.get("tools.build:sysroot", check_type=str)
+                if rdk_sysroot:
+                    _sr = f"--sysroot={rdk_sysroot}"
+                    qmake_cmd += (f' "QMAKE_CXXFLAGS+={_sr}" "QMAKE_CFLAGS+={_sr}" '
+                                  f'"QMAKE_LFLAGS+={_sr}"')
+                self.run(qmake_cmd)
+                self.run(self._make_program())
+        except ConanException:
+            self.output.warning(f"{name} plugin build failed; it will not be packaged.")
+            return
+
+        dest_dir = os.path.join(self.package_folder, "plugins", plugin_type)
+        so_name = f"lib{name}.so"
+        dest = os.path.join(dest_dir, so_name)
+        built = None
+        candidates = [dest]
+        candidates += glob.glob(os.path.join(stage, "**", so_name), recursive=True)
+        candidates += glob.glob(os.path.join(self.package_folder, "plugins", "**", so_name), recursive=True)
+        for cand in candidates:
+            if os.path.isfile(cand):
+                built = cand
+                break
+        if not built:
+            self.output.warning(f"{name} plugin .so not found after build; not packaged.")
+            return
+        os.makedirs(dest_dir, exist_ok=True)
+        if os.path.abspath(built) != os.path.abspath(dest):
+            shutil.copy(built, dest)
+
     def package_info(self):
         self.cpp_info.set_property("cmake_file_name", "Qt5")
         self.cpp_info.set_property("pkg_config_name", "qt5")
@@ -1168,6 +1963,14 @@ Prefix = ..""")
             core_reqs.append("glib::glib-2.0")
 
         _create_module("Core", core_reqs)
+        if not self.options.shared and not self.options.get_safe("with_pcre2", False):
+            # A static Qt configured with --pcre=qt links QtCore against the bundled
+            # PCRE static lib (libqtpcre for Qt < 5.8, libqtpcre2 for newer). Expose
+            # it so consumers of the static libs resolve the pcre16_*/pcre2_* symbols.
+            # For a shared Qt the bundled PCRE is linked into libQt5Core directly and
+            # no separate static lib is installed, so there is nothing to expose.
+            bundled_pcre = "qtpcre"
+            self.cpp_info.components["qtCore"].libs.append(f"{bundled_pcre}{libsuffix}")
         pkg_config_vars = [
             "host_bins=${prefix}/bin",
             "exec_prefix=${prefix}",
@@ -1219,29 +2022,24 @@ Prefix = ..""")
                 gui_reqs.append("md4c::md4c")
             _create_module("Gui", gui_reqs)
             _add_build_module("qtGui", self._cmake_qt5_private_file("Gui"))
+            # Qt built with -opengl es2 (RDK Kirkstone) resolves glGenTextures/
+            # glCreateShader/... against the device's GLESv2 lib, but Qt 5.6.3
+            # omits -lGLESv2 from libQt5Gui.prl so it is not propagated. Add it as
+            # a system lib, mirroring the .prl patch in setup_and_build_*_qt563.sh.
+            if self.settings.os in ["Linux", "FreeBSD"] and self.options.get_safe("opengl") == "es2":
+                self.cpp_info.components["qtGui"].system_libs.append("GLESv2")
             _create_plugin("QOffscreenIntegrationPlugin", "qoffscreen", "platforms", ["Core", "Gui"])
 
-            event_dispatcher_reqs = ["Core", "Gui"]
-            if self.options.with_glib:
-                event_dispatcher_reqs.append("glib::glib")
-            _create_module("EventDispatcherSupport", event_dispatcher_reqs)
-            _add_build_module("qtEventDispatcherSupport", self._cmake_qt5_private_file("EventDispatcherSupport"))
-            _create_module("FontDatabaseSupport", ["Core", "Gui"])
-            _add_build_module("qtFontDatabaseSupport", self._cmake_qt5_private_file("FontDatabaseSupport"))
-            if self.settings.os == "Windows":
-                self.cpp_info.components["qtFontDatabaseSupport"].system_libs.extend(["advapi32", "ole32", "user32", "gdi32"])
-            elif is_apple_os(self):
-                self.cpp_info.components["qtFontDatabaseSupport"].frameworks.extend(["CoreFoundation", "CoreGraphics", "CoreText","Foundation"])
-                self.cpp_info.components["qtFontDatabaseSupport"].frameworks.append("AppKit" if self.settings.os == "Macos" else "UIKit")
+            # Qt 5.6.3 ships a single consolidated static libQt5PlatformSupport
+            # instead of the fine-grained *Support libraries.
+            _create_module("PlatformSupport", ["Core", "Gui"], has_include_dir=False)
+            if is_apple_os(self):
+                self.cpp_info.components["qtPlatformSupport"].frameworks.extend(["CoreFoundation", "CoreGraphics", "CoreText", "Foundation"])
+                self.cpp_info.components["qtPlatformSupport"].frameworks.append("AppKit" if self.settings.os == "Macos" else "UIKit")
             if self.options.get_safe("with_fontconfig"):
-                self.cpp_info.components["qtFontDatabaseSupport"].requires.append("fontconfig::fontconfig")
+                self.cpp_info.components["qtPlatformSupport"].requires.append("fontconfig::fontconfig")
             if self.options.get_safe("with_freetype"):
-                self.cpp_info.components["qtFontDatabaseSupport"].requires.append("freetype::freetype")
-
-            _create_module("ThemeSupport", ["Core", "Gui"])
-            _create_module("AccessibilitySupport", ["Core", "Gui"])
-            if self.options.get_safe("with_vulkan"):
-                _create_module("VulkanSupport", ["Core", "Gui"])
+                self.cpp_info.components["qtPlatformSupport"].requires.append("freetype::freetype")
 
             if self.options.widgets:
                 _create_module("Widgets", ["Gui"])
@@ -1250,13 +2048,6 @@ Prefix = ..""")
                     _create_module("PrintSupport", ["Gui", "Widgets"])
                     if self.settings.os == "Macos" and not self.options.shared:
                         self.cpp_info.components["qtPrintSupport"].system_libs.append("cups")
-
-            if is_apple_os(self):
-                _create_module("ClipboardSupport", ["Core", "Gui"])
-                self.cpp_info.components["qtClipboardSupport"].frameworks = ["ImageIO"]
-                if self.settings.os == "Macos":
-                    self.cpp_info.components["qtClipboardSupport"].frameworks.append("AppKit")
-                _create_module("GraphicsSupport", ["Core", "Gui"])
 
             if self.settings.os in ["Android", "Emscripten"]:
                 _create_module("EglSupport", ["Core", "Gui"])
@@ -1279,13 +2070,14 @@ Prefix = ..""")
                 _create_plugin("QAndroidIntegrationPlugin", "qtforandroid", "platforms", android_reqs)
                 self.cpp_info.components["qtQAndroidIntegrationPlugin"].system_libs = ["android", "jnigraphics"]
             elif self.settings.os == "Macos":
-                cocoa_reqs = ["Core", "Gui", "ClipboardSupport", "ThemeSupport", "FontDatabaseSupport", "GraphicsSupport", "AccessibilitySupport"]
+                cocoa_reqs = ["Core", "Gui", "PlatformSupport"]
                 if self.options.get_safe("with_vulkan"):
                     cocoa_reqs.append("VulkanSupport")
                 if self.options.widgets:
                     cocoa_reqs.append("PrintSupport")
                 _create_plugin("QCocoaIntegrationPlugin", "qcocoa", "platforms", cocoa_reqs)
-                _create_plugin("QMacStylePlugin", "qmacstyle", "styles", cocoa_reqs)
+                # In 5.6.3 QMacStyle is built into QtWidgets, so there is no
+                # separate qmacstyle styles plugin.
                 self.cpp_info.components["QCocoaIntegrationPlugin"].frameworks = ["AppKit", "Carbon", "CoreServices", "CoreVideo",
                     "IOKit", "IOSurface", "Metal", "QuartzCore"]
             elif self.settings.os in ["iOS", "tvOS"]:
@@ -1297,24 +2089,13 @@ Prefix = ..""")
             elif self.settings.os == "Emscripten":
                 _create_plugin("QWasmIntegrationPlugin", "qwasm", "platforms", ["Core", "Gui", "EventDispatcherSupport", "FontDatabaseSupport", "EglSupport"])
             elif self.settings.os in ["Linux", "FreeBSD"]:
-                service_support_reqs = ["Core", "Gui"]
-                if self.options.with_dbus:
-                    service_support_reqs.append("DBus")
-                _create_module("ServiceSupport", service_support_reqs)
-                _create_module("EdidSupport")
+                # Qt 5.6.3 consolidates all the fine-grained *Support libraries
+                # (ServiceSupport, ThemeSupport, FontDatabaseSupport, EdidSupport,
+                # XkbCommonSupport, AccessibilitySupport, ...) into a single
+                # libQt5PlatformSupport, so the xcb QPA plugin depends on that
+                # consolidated module instead of the per-feature ones.
                 if self.options.get_safe("with_x11", False):
-                    _create_module("XkbCommonSupport", ["Core", "Gui", "xkbcommon::libxkbcommon-x11"])
-                    xcb_qpa_reqs = ["Core", "Gui", "ServiceSupport", "ThemeSupport", "FontDatabaseSupport", "EdidSupport", "XkbCommonSupport", "xorg::xorg"]
-                elif self.options.qtwayland:
-                    _create_module("XkbCommonSupport", ["Core", "Gui", "xkbcommon::libxkbcommon"])
-                if self.options.with_dbus and self.options.with_atspi:
-                    _create_module("LinuxAccessibilitySupport", ["Core", "DBus", "Gui", "AccessibilitySupport", "at-spi2-core::at-spi2-core"])
-                    xcb_qpa_reqs.append("LinuxAccessibilitySupport")
-                if self.options.get_safe("with_vulkan"):
-                    xcb_qpa_reqs.append("VulkanSupport")
-                if self.options.get_safe("with_x11", False):
-                    xcb_qpa_reqs += ["Core", "Gui", "ServiceSupport", "ThemeSupport", "FontDatabaseSupport",
-                                    "EdidSupport", "xorg::xorg"]
+                    xcb_qpa_reqs = ["Core", "Gui", "PlatformSupport", "xorg::xorg"]
                     _create_module("XcbQpa", xcb_qpa_reqs, has_include_dir=False)
                     _create_plugin("QXcbIntegrationPlugin", "qxcb", "platforms", ["Core", "Gui", "XcbQpa"])
                     _create_plugin("QXcbGlxIntegrationPlugin", "qxcb-glx-integration", "xcbglintegrations", ["Core", "Gui"])
@@ -1331,7 +2112,7 @@ Prefix = ..""")
             if self.settings.os != "Windows":
                 _create_plugin("QODBCDriverPlugin", "qsqlodbc", "sqldrivers", ["odbc::odbc"])
         networkReqs = []
-        if self.options.get_safe("openssl", False):
+        if self.options.get_safe("openssl", False) or self.settings.os in ['Linux', 'FreeBSD']:
             networkReqs.append("openssl::openssl")
         if self.settings.os in ['Linux', 'FreeBSD'] and self.options.with_gssapi:
             networkReqs.append("krb5::krb5-gssapi")
@@ -1346,17 +2127,15 @@ Prefix = ..""")
         if self.options.qtdeclarative:
             _create_module("Qml", ["Network"])
             _add_build_module("qtQml", self._cmake_qt5_private_file("Qml"))
-            _create_module("QmlModels", ["Qml"])
             self.cpp_info.components["qtQmlImportScanner"].set_property("cmake_target_name", "Qt5::QmlImportScanner")
             self.cpp_info.components["qtQmlImportScanner"].set_property("cmake_target_aliases", ["Qt::QmlImportScanner"])
             self.cpp_info.components["qtQmlImportScanner"].requires = _get_corrected_reqs(["Qml"])
             if self.options.gui:
-                _create_module("Quick", ["Gui", "Qml", "QmlModels"])
+                quick_reqs = ["Gui", "Qml"]
+                _create_module("Quick", quick_reqs)
                 _add_build_module("qtQuick", self._cmake_qt5_private_file("Quick"))
                 if self.options.widgets:
                     _create_module("QuickWidgets", ["Gui", "Qml", "Quick", "Widgets"])
-                _create_module("QuickShapes", ["Gui", "Qml", "Quick"])
-            _create_module("QmlWorkerScript", ["Qml"])
             _create_module("QuickTest", ["Test"])
 
         if self.options.qttools and self.options.gui and self.options.widgets:
@@ -1386,23 +2165,34 @@ Prefix = ..""")
             _create_plugin("QSvgIconPlugin", "qsvgicon", "iconengines", [])
             _create_plugin("QSvgPlugin", "qsvg", "imageformats", [])
 
-        if self.options.gui and self.options.get_safe("with_libjpeg"):
-            jpeg_lib = str(self.options.with_libjpeg)
-            _create_plugin("QJpegPlugin", "qjpeg", "imageformats", [f"{jpeg_lib}::{jpeg_lib}"])
+        if self.options.gui:
+            jpeg_lib = self.options.get_safe("with_libjpeg")
+            if jpeg_lib:
+                _create_plugin("QJpegPlugin", "qjpeg", "imageformats", [f"{jpeg_lib}::{jpeg_lib}"])
 
         if self.options.gui and self.options.get_safe("qtwayland"):
             _create_module("WaylandClient", ["Gui", "wayland::wayland-client"])
-            _create_module("WaylandCompositor", ["Gui", "wayland::wayland-server"])
-            _create_plugin("QWaylandIntegrationPlugin","qwayland-generic", "platforms", ["Gui"])
-            _create_plugin("QWaylandEglPlatformIntegrationPlugin","qwayland-egl", "platforms", ["Gui"])
-            _create_plugin("QWaylandXCompositeGlxPlatformIntegrationPlugin","qwayland-xcomposite-glx", "platforms", ["Gui"])
-            _create_plugin("QWaylandWlShellIntegrationPlugin","wl-shell", "wayland-shell-integration", ["WaylandClient"])
-            _create_plugin("QWaylandFullScreenShellV1IntegrationPlugin","fullscreen-shell-v1", "wayland-shell-integration", ["WaylandClient"])
-            _create_plugin("QWaylandXdgShellIntegrationPlugin","xdg-shell", "wayland-shell-integration", ["WaylandClient"])
-            _create_plugin("QWaylandIviShellIntegrationPlugin","ivi-shell", "wayland-shell-integration", ["WaylandClient"])
-            _create_plugin("QWaylandEglClientBufferPlugin", "qt-plugin-wayland-egl", "wayland-graphics-integration-client", ["WaylandClient"])
-            _create_plugin("QWaylandXCompositeGlxClientBufferPlugin", "xcomposite-glx", "wayland-graphics-integration-client", ["WaylandClient"])
-            _create_plugin("QWaylandBradientDecorationPlugin", "bradient", "wayland-decoration-client", ["WaylandClient"])
+            if Version(self.version) >= "5.8":
+                _create_module("WaylandCompositor", ["Gui", "wayland::wayland-server"])
+
+            def _wl_plugin(pluginname, libname, plugintype, requires):
+                # Qt 5.6.3's qtwayland builds only a subset of these plugins for
+                # the RDK GLES2/no-X11 config; declare each only if its lib was
+                # packaged so CMakeConfigDeps can resolve every component location.
+                so = os.path.join(self.package_folder, "plugins", plugintype, f"lib{libname}.so")
+                if os.path.isfile(so):
+                    _create_plugin(pluginname, libname, plugintype, requires)
+
+            _wl_plugin("QWaylandIntegrationPlugin","qwayland-generic", "platforms", ["Gui"])
+            _wl_plugin("QWaylandEglPlatformIntegrationPlugin","qwayland-egl", "platforms", ["Gui"])
+            _wl_plugin("QWaylandXCompositeGlxPlatformIntegrationPlugin","qwayland-xcomposite-glx", "platforms", ["Gui"])
+            _wl_plugin("QWaylandWlShellIntegrationPlugin","wl-shell", "wayland-shell-integration", ["WaylandClient"])
+            _wl_plugin("QWaylandFullScreenShellV1IntegrationPlugin","fullscreen-shell-v1", "wayland-shell-integration", ["WaylandClient"])
+            _wl_plugin("QWaylandXdgShellIntegrationPlugin","xdg-shell", "wayland-shell-integration", ["WaylandClient"])
+            _wl_plugin("QWaylandIviShellIntegrationPlugin","ivi-shell", "wayland-shell-integration", ["WaylandClient"])
+            _wl_plugin("QWaylandEglClientBufferPlugin", "qt-plugin-wayland-egl", "wayland-graphics-integration-client", ["WaylandClient"])
+            _wl_plugin("QWaylandXCompositeGlxClientBufferPlugin", "xcomposite-glx", "wayland-graphics-integration-client", ["WaylandClient"])
+            _wl_plugin("QWaylandBradientDecorationPlugin", "bradient", "wayland-decoration-client", ["WaylandClient"])
 
         if self.options.qtlocation:
             _create_module("Positioning")
