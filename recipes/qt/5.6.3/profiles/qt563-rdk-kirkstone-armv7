@@ -9,11 +9,11 @@
 # Building requires RDK_SDK_PATH to point at the extracted RDK SDK (the
 # included platform profile reads it to locate the cross toolchain/sysroot).
 #
-# IMPORTANT: the [options] block below MUST stay byte-for-byte in lockstep with
-# the consumer profile
+# IMPORTANT: the [options] and [platform_requires] blocks below MUST stay
+# byte-for-byte in lockstep with the consumer profile
 #   core-app/toolchain/profiles/entos-rdk-kirkstone-armv7-qt563
-# If the two option sets diverge, the qt/5.6.3 package_id changes and Conan will
-# rebuild Qt from source instead of downloading the prebuilt binary.
+# If these diverge, the qt/5.6.3 package_id changes and Conan will rebuild Qt
+# from source instead of downloading the prebuilt binary.
 include(entos-rdk-kirkstone-armv7)
 
 [options]
@@ -46,9 +46,10 @@ qt/*:qtwebchannel=True
 qt/*:with_fontconfig=False
 qt/*:with_icu=False
 
-[conf]
-# opengl/system's system_requirements() unconditionally checks for host desktop
-# libGL (libgl-dev) on Linux, which the kirkstone cross-build container lacks and
-# doesn't need: the ARM target's OpenGL ES 2 comes from the RDK sysroot. Report
-# instead of check so the missing host package doesn't fail the build.
-opengl/*:tools.system.package_manager:mode=report
+[platform_requires]
+# The device renders through a GLES-only vendor GL stack: there is no desktop
+# gl.pc in the cross sysroot for opengl/system's PkgConfig('gl') probe, and Qt
+# links GLESv2/EGL from the RDK target mkspec itself. Treat opengl/system as
+# platform-provided so Conan skips it entirely (no 'gl' pkg-config probe and no
+# host libgl-dev system_requirements check on the cross-build container).
+opengl/system
