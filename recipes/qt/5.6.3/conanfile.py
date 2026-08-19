@@ -667,23 +667,27 @@ class QtConan(ConanFile):
             env.define("OPENSSL_LIBS", " ".join(_ossl_flags))
         if self.settings.os == "Windows":
             env.prepend_path("PATH", os.path.join(self.source_folder, "qt5", "gnuwin32", "bin"))
-        if is_apple_os(self) and not cross_building(self, skip_x64_x86=True):
-            # Reproduce setup_and_build_macos_desktop_qt563.sh on Apple Silicon:
-            # force the target arch and disable NEON, since Qt 5.6.3 only wires
-            # NEON drawhelpers for Linux/Android and references undefined symbols
-            # on macOS arm64 otherwise. Only for a NATIVE Apple build: when
-            # cross-compiling macOS from Linux (osxcross) these -arch/CC/CXX env
-            # vars would also hit Qt's host bootstrap tools, which compile with
-            # the Linux build compiler and reject the Apple-only -arch flag. The
-            # osxcross target arch comes from the macx-clang mkspec plus the
-            # CROSS_COMPILE=<triple>- prefix instead.
-            apple_arch = to_apple_arch(self)
-            arch_flags = f"-arch {apple_arch} -U__ARM_NEON__ -U__ARM_NEON"
+        if is_apple_os(self):
+            # Force the compiler to clang so Qt's host bootstrap tools use the
+            # native (build-machine) clang: on osxcross the linux-g++ host mkspec
+            # would otherwise resolve the macOS cross clang, which has no glibc
+            # <features.h>. The macx-clang mkspec plus CROSS_COMPILE=<triple>-
+            # prefix still retargets the actual macOS build to the cross clang.
             env.define("CC", "clang")
             env.define("CXX", "clang++")
-            env.define("CFLAGS", arch_flags)
-            env.define("CXXFLAGS", arch_flags)
-            env.define("LDFLAGS", f"-arch {apple_arch}")
+            if not cross_building(self, skip_x64_x86=True):
+                # Reproduce setup_and_build_macos_desktop_qt563.sh on Apple
+                # Silicon: force the target arch and disable NEON, since Qt 5.6.3
+                # only wires NEON drawhelpers for Linux/Android and references
+                # undefined symbols on macOS arm64 otherwise. Native build only:
+                # when cross-compiling from Linux (osxcross) these -arch flags
+                # would also hit the native-clang host bootstrap tools, which
+                # reject the Apple-only -arch flag.
+                apple_arch = to_apple_arch(self)
+                arch_flags = f"-arch {apple_arch} -U__ARM_NEON__ -U__ARM_NEON"
+                env.define("CFLAGS", arch_flags)
+                env.define("CXXFLAGS", arch_flags)
+                env.define("LDFLAGS", f"-arch {apple_arch}")
         if self._is_rdk_kirkstone:
             # Put the RDK cross-toolchain bin dir first on PATH so qmake finds the
             # arm-rdk-linux-gnueabi-* tools named by the retargeted target mkspec.
