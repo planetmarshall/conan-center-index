@@ -1048,7 +1048,10 @@ class QtConan(ConanFile):
             args += [f"-I \"{s}\"" for s in dependency.cpp_info.aggregated_components().includedirs]
             args += [f"-D {s}" for s in dependency.cpp_info.aggregated_components().defines]
 
-        if self.settings.os == "Macos":
+        if self.settings.os == "Macos" and not cross_building(self, skip_x64_x86=True):
+            # -framework/-no-framework are only registered by configure when the
+            # build host is macOS; passing it while cross-compiling (e.g. osxcross
+            # on Linux) makes configure abort with "invalid command-line switch".
             args += ["-no-framework"]
         elif self.settings.os == "Android":
             args += [f"-android-ndk-platform android-{self.settings.os.api_level}"]
