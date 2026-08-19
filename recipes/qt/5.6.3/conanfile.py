@@ -667,11 +667,16 @@ class QtConan(ConanFile):
             env.define("OPENSSL_LIBS", " ".join(_ossl_flags))
         if self.settings.os == "Windows":
             env.prepend_path("PATH", os.path.join(self.source_folder, "qt5", "gnuwin32", "bin"))
-        if is_apple_os(self):
+        if is_apple_os(self) and not cross_building(self, skip_x64_x86=True):
             # Reproduce setup_and_build_macos_desktop_qt563.sh on Apple Silicon:
             # force the target arch and disable NEON, since Qt 5.6.3 only wires
             # NEON drawhelpers for Linux/Android and references undefined symbols
-            # on macOS arm64 otherwise.
+            # on macOS arm64 otherwise. Only for a NATIVE Apple build: when
+            # cross-compiling macOS from Linux (osxcross) these -arch/CC/CXX env
+            # vars would also hit Qt's host bootstrap tools, which compile with
+            # the Linux build compiler and reject the Apple-only -arch flag. The
+            # osxcross target arch comes from the macx-clang mkspec plus the
+            # CROSS_COMPILE=<triple>- prefix instead.
             apple_arch = to_apple_arch(self)
             arch_flags = f"-arch {apple_arch} -U__ARM_NEON__ -U__ARM_NEON"
             env.define("CC", "clang")
