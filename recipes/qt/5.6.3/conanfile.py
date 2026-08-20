@@ -1591,7 +1591,33 @@ Prefix = ..""")
         # can build epg / modern C++ consumers. Same invocation as the
         # scripts: patch -p1 --forward --ignore-whitespace at the prefix.
         install_patch = os.path.join(self.recipe_folder, "qt563_install.patch")
-        self.run(f'patch -p1 --batch --forward --ignore-whitespace -d "{self.package_folder}" < "{install_patch}" || true')
+        # osxcross builds Qt as macOS frameworks, so the public headers the patch
+        # polyfills (QStringLiteral, invokeMethod functor overloads, ...) live in
+        # lib/Qt<Module>.framework/Headers, not the flat include/ tree the patch
+        # targets. Rewrite the header paths to the framework layout so consumers
+        # compiling against the frameworks see them. Native macOS uses
+        # -no-framework (flat include/) and applies the patch unmodified.
+        if self.settings.os == "Macos" and cross_building(self, skip_x64_x86=True):
+            module_map = {
+                "include/QtCore/": "lib/QtCore.framework/Headers/",
+                "include/QtGui/": "lib/QtGui.framework/Headers/",
+                "include/QtNetwork/": "lib/QtNetwork.framework/Headers/",
+                "include/QtConcurrent/": "lib/QtConcurrent.framework/Headers/",
+                "include/QtTest/": "lib/QtTest.framework/Headers/",
+            }
+            with open(install_patch, "r") as fh:
+                patch_lines = fh.readlines()
+            for i, line in enumerate(patch_lines):
+                if line.startswith(("--- ", "+++ ", "diff ")):
+                    for src, dst in module_map.items():
+                        line = line.replace(src, dst)
+                    patch_lines[i] = line
+            framework_patch = os.path.join(self.build_folder, "qt563_install_framework.patch")
+            with open(framework_patch, "w") as fh:
+                fh.writelines(patch_lines)
+            self.run(f'patch -p1 --batch --forward --ignore-whitespace -d "{self.package_folder}" < "{framework_patch}"')
+        else:
+            self.run(f'patch -p1 --batch --forward --ignore-whitespace -d "{self.package_folder}" < "{install_patch}"')
         # qpa is a symlinked dir (not represented in the patch); recreate it.
         qpa_targets = glob.glob(os.path.join(self.package_folder, "include", "QtGui", "*", "QtGui", "qpa"))
         if qpa_targets:
