@@ -900,6 +900,15 @@ class QtConan(ConanFile):
                     "mkspecs", "macx-clang", "qmake.conf",
                 )
                 cross = str(self.options.cross_compile)
+                # -undefined dynamic_lookup: ld64.lld cannot resolve every macOS
+                # SDK symbol from the TBD stubs at cross-link time, so defer them
+                # to runtime. This also lets Qt's `common/sse2` config test LINK
+                # its Mach-O probe executable; without it that link fails, configure
+                # reports "SSE2 no", the SIMD sources (qdrawhelper_sse2.cpp, ...) are
+                # dropped, yet qdrawhelper.cpp (compiled with __SSE2__) still refers
+                # to them -> undefined qt_memfill*/comp_func_*_sse2 when linking
+                # QtGui.framework. Mirrors the -Wl,-undefined,dynamic_lookup that
+                # setup_and_build_osxcross_qt563.sh injects on every link step.
                 replace_in_file(
                     self, macx_clang_conf,
                     "QMAKE_MACOSX_DEPLOYMENT_TARGET = 10.7\n\nload(qt_config)",
@@ -909,7 +918,8 @@ class QtConan(ConanFile):
                     "QMAKE_LINK = $$QMAKE_CXX\n"
                     "QMAKE_LINK_SHLIB = $$QMAKE_CXX\n"
                     "QMAKE_LINK_C = $$QMAKE_CC\n"
-                    "QMAKE_LINK_C_SHLIB = $$QMAKE_CC\n\n"
+                    "QMAKE_LINK_C_SHLIB = $$QMAKE_CC\n"
+                    "QMAKE_LFLAGS += -Wl,-undefined,dynamic_lookup\n\n"
                     "load(qt_config)",
                     strict=False,
                 )
