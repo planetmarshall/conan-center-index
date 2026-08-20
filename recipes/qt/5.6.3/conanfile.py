@@ -230,6 +230,11 @@ class QtConan(ConanFile):
             return cc[:-3]
         return "arm-rdk-linux-gnueabi-"
 
+    @property
+    def _is_osxcross(self):
+        # True when cross-building macOS on a Linux build machine (osxcross).
+        return self.settings.os == "Macos" and self._settings_build.os == "Linux"
+
     def export(self):
         copy(self, f"qtmodules{self.version}.conf", self.recipe_folder, self.export_folder)
         # 5.6.3: install-side changes from the core-app setup_and_build Qt SDK
@@ -667,27 +672,57 @@ class QtConan(ConanFile):
             env.define("OPENSSL_LIBS", " ".join(_ossl_flags))
         if self.settings.os == "Windows":
             env.prepend_path("PATH", os.path.join(self.source_folder, "qt5", "gnuwin32", "bin"))
-        if is_apple_os(self):
-            # Force the compiler to clang so Qt's host bootstrap tools use the
-            # native (build-machine) clang: on osxcross the linux-g++ host mkspec
-            # would otherwise resolve the macOS cross clang, which has no glibc
-            # <features.h>. The macx-clang mkspec plus CROSS_COMPILE=<triple>-
-            # prefix still retargets the actual macOS build to the cross clang.
+        if self._is_osxcross:
+            # osxcross: do NOT let the profile's macOS cross clang (buildenv CC)
+            # become Qt's global QMAKE_CC. That would force the native host
+            # bootstrap tools (moc/uic/rcc) to cross-compile to Mach-O, which
+            # cannot run on the Linux build machine, and also breaks on the
+            # missing glibc <features.h>. Unset it so the host bootstrap uses the
+            # native linux-clang spec (see build() -platform), while build()
+            # retargets ONLY the macx-clang target spec at the osxcross clang.
+            # This is the same host/target compiler split used for RDK kirkstone.
+            env.unset("CC")
+            env.unset("CXX")
+        elif is_apple_os(self):
+            # Native macOS: force clang for the host bootstrap tools.
             env.define("CC", "clang")
             env.define("CXX", "clang++")
             if not cross_building(self, skip_x64_x86=True):
                 # Reproduce setup_and_build_macos_desktop_qt563.sh on Apple
                 # Silicon: force the target arch and disable NEON, since Qt 5.6.3
                 # only wires NEON drawhelpers for Linux/Android and references
-                # undefined symbols on macOS arm64 otherwise. Native build only:
-                # when cross-compiling from Linux (osxcross) these -arch flags
-                # would also hit the native-clang host bootstrap tools, which
-                # reject the Apple-only -arch flag.
+                # undefined symbols on macOS arm64 otherwise.
                 apple_arch = to_apple_arch(self)
                 arch_flags = f"-arch {apple_arch} -U__ARM_NEON__ -U__ARM_NEON"
                 env.define("CFLAGS", arch_flags)
                 env.define("CXXFLAGS", arch_flags)
                 env.define("LDFLAGS", f"-arch {apple_arch}")
+        if self._is_osxcross:
+            # Qt 5.6.3 builds its host bootstrap tools (moc/uic/rcc and
+            # libQt5Bootstrap.a) as native Linux ELF objects (via CC/CXX=clang
+            # above), but archives them with the CROSS_COMPILE-prefixed osxcross
+            # ar/ranlib (cctools, Mach-O only). Those cannot index ELF members,
+            # so libQt5Bootstrap.a gets an empty symbol table and uic fails to
+            # link ("undefined reference" to every QtCore symbol). Shadow the
+            # osxcross ar/ranlib with llvm-ar/llvm-ranlib, which index both the
+            # ELF host archive and the Mach-O target archives.
+            llvm_ar = shutil.which("llvm-ar-19") or shutil.which("llvm-ar")
+            llvm_ranlib = shutil.which("llvm-ranlib-19") or shutil.which("llvm-ranlib")
+            if llvm_ar and llvm_ranlib:
+                prefix = str(self.options.cross_compile)
+                wrap_dir = os.path.join(self.build_folder, ".osxcross-ar")
+                ar_wrap = os.path.join(wrap_dir, f"{prefix}ar")
+                save(self, ar_wrap, f'#!/usr/bin/env bash\nexec "{llvm_ar}" "$@"\n')
+                os.chmod(ar_wrap, 0o755)
+                # llvm-ranlib always writes an index and rejects the -s flag that
+                # Qt's macx-clang mkspec passes (QMAKE_RANLIB = ranlib -s).
+                ranlib_wrap = os.path.join(wrap_dir, f"{prefix}ranlib")
+                save(self, ranlib_wrap,
+                     '#!/usr/bin/env bash\n_args=()\n'
+                     'for _a in "$@"; do [[ "$_a" == "-s" ]] || _args+=("$_a"); done\n'
+                     f'exec "{llvm_ranlib}" "${{_args[@]}}"\n')
+                os.chmod(ranlib_wrap, 0o755)
+                env.prepend_path("PATH", wrap_dir)
         if self._is_rdk_kirkstone:
             # Put the RDK cross-toolchain bin dir first on PATH so qmake finds the
             # arm-rdk-linux-gnueabi-* tools named by the retargeted target mkspec.
@@ -854,6 +889,30 @@ class QtConan(ConanFile):
                 strict=False,
             )
             # NOTE: the mac.conf OpenGL/AGL fix is applied by qt563_source.patch.
+            if self._is_osxcross:
+                # macx-clang hardcodes QMAKE_CC = clang (common/clang.conf) with
+                # no CROSS_COMPILE prefix, so the target modules would build with
+                # the native clang. Retarget the macx-clang spec at the osxcross
+                # clang so target objects/dylibs are Mach-O; the host bootstrap
+                # tools use the separate native linux-clang spec (-platform).
+                macx_clang_conf = os.path.join(
+                    self.source_folder, "qt5", "qtbase",
+                    "mkspecs", "macx-clang", "qmake.conf",
+                )
+                cross = str(self.options.cross_compile)
+                replace_in_file(
+                    self, macx_clang_conf,
+                    "QMAKE_MACOSX_DEPLOYMENT_TARGET = 10.7\n\nload(qt_config)",
+                    "QMAKE_MACOSX_DEPLOYMENT_TARGET = 10.7\n\n"
+                    f"QMAKE_CC = {cross}clang\n"
+                    f"QMAKE_CXX = {cross}clang++\n"
+                    "QMAKE_LINK = $$QMAKE_CXX\n"
+                    "QMAKE_LINK_SHLIB = $$QMAKE_CXX\n"
+                    "QMAKE_LINK_C = $$QMAKE_CC\n"
+                    "QMAKE_LINK_C_SHLIB = $$QMAKE_CC\n\n"
+                    "load(qt_config)",
+                    strict=False,
+                )
         if self._is_rdk_kirkstone:
             # Apply the qtwayland compatibility patch (wl_keyboard v4 repeat_info,
             # stale-pointer guard) to the shared source, matching the wayland step
@@ -1092,11 +1151,15 @@ class QtConan(ConanFile):
                     args += [f"-platform {xplatform_val}"]
                 else:
                     # On a Linux build host, pin the host bootstrap tools
-                    # (moc/uic/rcc) to the native linux-g++ spec so they never
-                    # inherit the cross target toolchain, while the target is
-                    # built with the retargeted arm-rdk mkspec.
-                    if self._is_rdk_kirkstone and self._settings_build.os == "Linux":
-                        args += ["-platform linux-g++"]
+                    # (moc/uic/rcc) to a native host spec so they never inherit
+                    # the cross target toolchain, while the target is built with
+                    # the retargeted mkspec. RDK uses gcc; osxcross uses clang
+                    # (the osxcross container ships clang, not necessarily g++).
+                    if self._settings_build.os == "Linux":
+                        if self._is_rdk_kirkstone:
+                            args += ["-platform linux-g++"]
+                        elif self._is_osxcross:
+                            args += ["-platform linux-clang"]
                     args += [f"-xplatform {xplatform_val}"]
             else:
                 self.output.warn("host not supported: %s %s %s %s" %
@@ -1114,10 +1177,11 @@ class QtConan(ConanFile):
                 os.environ[var] = val
             return val
 
-        # Skip on RDK: setting QMAKE_CC/QMAKE_CXX on the configure line applies
-        # them globally and clobbers Qt's host bootstrap compiler. The RDK target
-        # compiler comes from the target mkspec's CROSS_COMPILE prefix instead.
-        if not is_msvc(self) and not self._is_rdk_kirkstone:
+        # Skip on RDK/osxcross: setting QMAKE_CC/QMAKE_CXX on the configure line
+        # applies them globally and clobbers Qt's native host bootstrap compiler.
+        # The cross target compiler comes from the retargeted target mkspec
+        # instead (CROSS_COMPILE prefix for RDK; explicit osxcross clang here).
+        if not is_msvc(self) and not self._is_rdk_kirkstone and not self._is_osxcross:
             value = _getenvpath("CC")
             if value:
                 args += ['QMAKE_CC="' + value + '"',
