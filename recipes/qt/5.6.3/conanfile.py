@@ -956,9 +956,14 @@ class QtConan(ConanFile):
         # Match core-app setup_and_build Qt 5.6.3 configure flags.
         args.append("-no-pch")
         args.append("-no-qml-debug")
-        if is_apple_os(self):
-            # Apple Silicon: NEON disabled via CFLAGS (-U__ARM_NEON__); ensure
-            # Qt does not enable x86 SIMD paths either.
+        if is_apple_os(self) and self.settings.arch not in ("x86", "x86_64"):
+            # Apple Silicon (arm64): NEON disabled via CFLAGS (-U__ARM_NEON__);
+            # ensure Qt does not enable x86 SIMD paths either. Deliberately NOT
+            # for x86_64 (osxcross): there SSE2 must stay enabled, otherwise the
+            # SIMD sources (qdrawhelper_sse2.cpp, ...) are dropped while
+            # qdrawhelper.cpp — compiled with __SSE2__ on x86_64 — still refers
+            # to them, leaving undefined comp_func_*_sse2 / qt_memfill*_sse2 in
+            # QtGui.framework so the app aborts at launch (dyld flat-namespace).
             args += ["-no-sse2", "-no-sse3", "-no-ssse3",
                      "-no-sse4.1", "-no-sse4.2", "-no-avx", "-no-avx2"]
         # Match core-app setup_and_build reference: don't build the deprecated
