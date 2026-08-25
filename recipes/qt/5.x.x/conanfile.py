@@ -460,6 +460,8 @@ class QtConan(ConanFile):
             self.requires("dbus/1.15.8")
         if self.options.qtwayland:
             self.requires("wayland/1.22.0")
+            if self.options.get_safe("opengl", "no") != "no":
+                self.requires("egl/system")
         if self.settings.os in ['Linux', 'FreeBSD'] and self.options.with_gssapi:
             self.requires("krb5/1.21.2")
         if self.options.get_safe("with_atspi"):
@@ -1204,6 +1206,8 @@ Prefix = ..""")
                 if self.options.get_safe("with_x11", False):
                     gui_reqs.append("xorg::xorg")
             if self.options.get_safe("opengl", "no") != "no":
+                if self.options.get_safe("qtwayland", False):
+                    gui_reqs.append("egl::egl")
                 gui_reqs.append("opengl::opengl")
             if self.options.get_safe("with_vulkan", False):
                 gui_reqs.append("vulkan-loader::vulkan-loader")
@@ -1395,14 +1399,15 @@ Prefix = ..""")
             _create_module("WaylandCompositor", ["Gui", "wayland::wayland-server"])
             _create_plugin("QWaylandIntegrationPlugin","qwayland-generic", "platforms", ["Gui"])
             _create_plugin("QWaylandEglPlatformIntegrationPlugin","qwayland-egl", "platforms", ["Gui"])
-            _create_plugin("QWaylandXCompositeGlxPlatformIntegrationPlugin","qwayland-xcomposite-glx", "platforms", ["Gui"])
             _create_plugin("QWaylandWlShellIntegrationPlugin","wl-shell", "wayland-shell-integration", ["WaylandClient"])
             _create_plugin("QWaylandFullScreenShellV1IntegrationPlugin","fullscreen-shell-v1", "wayland-shell-integration", ["WaylandClient"])
             _create_plugin("QWaylandXdgShellIntegrationPlugin","xdg-shell", "wayland-shell-integration", ["WaylandClient"])
             _create_plugin("QWaylandIviShellIntegrationPlugin","ivi-shell", "wayland-shell-integration", ["WaylandClient"])
             _create_plugin("QWaylandEglClientBufferPlugin", "qt-plugin-wayland-egl", "wayland-graphics-integration-client", ["WaylandClient"])
-            _create_plugin("QWaylandXCompositeGlxClientBufferPlugin", "xcomposite-glx", "wayland-graphics-integration-client", ["WaylandClient"])
             _create_plugin("QWaylandBradientDecorationPlugin", "bradient", "wayland-decoration-client", ["WaylandClient"])
+            if self.options.get_safe("with_x11"):
+                _create_plugin("QWaylandXCompositeGlxPlatformIntegrationPlugin","qwayland-xcomposite-glx", "platforms", ["Gui"])
+                _create_plugin("QWaylandXCompositeGlxClientBufferPlugin", "xcomposite-glx", "wayland-graphics-integration-client", ["WaylandClient"])
 
         if self.options.qtlocation:
             _create_module("Positioning")
