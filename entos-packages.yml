@@ -12,7 +12,7 @@ b2:
     - '5.4.2'
 benchmark:
   versions:
-    - '1.9.4'
+    - '1.9.5'
 bison:
   versions:
     - '3.8.2'
@@ -59,6 +59,9 @@ double-conversion:
 editline:
   versions:
     - '3.1'
+egl:
+  versions:
+    - 'system'
 elfutils:
   versions:
     - '0.190'
