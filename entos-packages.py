@@ -1,7 +1,75 @@
+import re
+from functools import cmp_to_key
+
 import yaml
 from pathlib import Path
 from subprocess import run
 from argparse import ArgumentParser
+
+
+# Add versions here which are not the latest
+# versions of a package but we want to keep
+KEEP_VERSIONS = {
+    "qt": ['5.6.3', '5.15.7', '5.15.19'],
+    "openssl": ['3.5.6', '3.0.5']
+}
+
+class Version:
+    def __init__(self, version):
+        semver_regex = re.compile(
+            r"^(?P<major>0|[1-9]\d*)\.(?P<minor>0|[1-9]\d*)\.(?P<patch>0|[1-9]\d*)(?:-(?P<prerelease>(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\.(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\+(?P<buildmetadata>[0-9a-zA-Z-]+(?:\.[0-9a-zA-Z-]+)*))?$")
+        match = semver_regex.match(version)
+        self.version = version
+        self.is_semver = match is not None
+        if self.is_semver:
+            self.major = int(match.group("major"))
+            self.minor = int(match.group("minor"))
+            self.patch = int(match.group("patch"))
+
+    def __str__(self):
+        return self.version
+
+    def __repr__(self):
+        return self.version
+
+
+def compare_versions(v1: Version, v2: Version):
+    if not (v1.is_semver and v2.is_semver):
+        if str(v1) < str(v2):
+            return -1
+        elif str(v1) > str(v2):
+            return 1
+        return 0
+
+    delta = v1.major - v2.major
+    if delta != 0:
+        return delta
+
+    delta = v1.minor - v2.minor
+    if delta != 0:
+        return delta
+
+    return v1.patch - v2.patch
+
+
+def latest_config_version(config_file: Path):
+    with open(config_file, "r") as fp:
+        data = yaml.safe_load(fp)
+        versions = sorted([Version(v) for v in data["versions"].keys()], key=cmp_to_key(compare_versions), reverse=True)
+        return versions[0]
+
+
+def updated_packages():
+    packages = load_packages()
+    updates = {}
+    for recipe, _ in packages.items():
+        config_file = Path("recipes") / recipe / "config.yml"
+        keep_versions = KEEP_VERSIONS.get(recipe, [])
+        versions = [str(latest_config_version(config_file))] + keep_versions
+        updates[recipe] = {
+            "versions": versions
+        }
+    return updates
 
 
 def recipe_config(recipes):
@@ -40,7 +108,16 @@ def main():
     parser.add_argument(
         "--build", help="build the packages affected by the given change set"
     )
+    parser.add_argument(
+        "--update", help="update the entos-packages.yml file with the latest versions available", action="store_true"
+    )
     args = parser.parse_args()
+
+    if args.update:
+        packages = updated_packages()
+        with open("entos-packages.yml", "w") as fp:
+            yaml.safe_dump(packages, fp, default_style="'")
+        return
 
     configs = list(recipe_config(load_packages()))
     if args.export:

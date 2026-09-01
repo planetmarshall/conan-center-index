@@ -28,10 +28,10 @@ Not all packages available in CCI will be provided by the
 3. If necessary, add or update the required package
 4. Add the package and **and any dependencies** to [entos-packages.yml](entos-packages.yml)
 
-Upon a successful PR build, the package will be available from 
+Upon a successful PR build, the package will be available from
 [conan-entos-iui-dev](https://partners.artifactory.comcast.com/ui/repos/tree/General/conan-entos-iui-dev) for testing.
 
-When the PR is merged to `entos-master`, the package recipe will be available from the main 
+When the PR is merged to `entos-master`, the package recipe will be available from the main
 [conan-entos-iui-prod](https://partners.artifactory.comcast.com/ui/repos/tree/General/conan-entos-iui-prod)
 repository.
 
@@ -55,8 +55,16 @@ wayland/*: wayland/1.20.0@entos
 
 A [scheduled workflow](.github/workflows/sync_upstream.yml) automatically creates a PR with
 the latest changes from the upstream repository. It is likely that the PR will contain merge
-conflicts that require resolution. Where appropriate, changes to the upstream repository
-should be preferred if they are compatible.
+conflicts that require resolution. These can almost always be resolved
+by accepting the upstream changes, but care should be taken where the `entos-master` version
+of the recipe has customizations.
+
+When the conflicts have been resolved, run
+
+```
+entos-packages.py --update
+```
+To update the `entos-packages.yml` file with the latest package versions.
 
 ### CI Notes
 
