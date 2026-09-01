@@ -253,9 +253,6 @@ class QtConan(ConanFile):
         for m in submodules_tree:
             assert m in ["qtbase", "qtqa", "qtrepotools"] or m in self._submodules, "module %s is not present in recipe options : (%s)" % (m, ",".join(self._submodules))
 
-        # Store valid modules for this version to use in build()
-        self._valid_modules = set(submodules_tree.keys())
-
         for module in self._submodules:
             if module not in submodules_tree:
                 self._debug_output(f"qt5: removing {module} from options as it is not an option for this version, or it is ignored or obsolete")
@@ -335,6 +332,7 @@ class QtConan(ConanFile):
         if self.options.qtwebengine:
             if not self.options.shared:
                 raise ConanInvalidConfiguration("Static builds of Qt WebEngine are not supported")
+
             if not (self.options.gui and self.options.qtdeclarative and self.options.qtlocation and self.options.qtwebchannel):
                 raise ConanInvalidConfiguration("option qt:qtwebengine requires also qt:gui, qt:qtdeclarative, qt:qtlocation and qt:qtwebchannel")
 
@@ -356,7 +354,7 @@ class QtConan(ConanFile):
         if self.options.get_safe("with_fontconfig", False) and not self.options.get_safe("with_freetype", False):
             raise ConanInvalidConfiguration("with_fontconfig cannot be enabled if with_freetype is disabled.")
 
-        if self.options.get_safe("with_doubleconversion", True) is False and self.settings.get_safe("compiler.libcxx") != "libc++":
+        if not self.options.with_doubleconversion and self.settings.get_safe("compiler.libcxx") != "libc++":
             raise ConanInvalidConfiguration("Qt without libc++ needs qt:with_doubleconversion. "
                                             "Either enable qt:with_doubleconversion or switch to libc++")
 
@@ -383,15 +381,15 @@ class QtConan(ConanFile):
             raise ConanInvalidConfiguration("option cross_compile must be set for cross compilation "
                                             "cf https://doc.qt.io/qt-5/configure-options.html#cross-compilation-options")
 
-        if self.options.get_safe("with_sqlite3", False) and not self.dependencies["sqlite3"].options.enable_column_metadata:
+        if self.options.with_sqlite3 and not self.dependencies["sqlite3"].options.enable_column_metadata:
             raise ConanInvalidConfiguration("sqlite3 option enable_column_metadata must be enabled for qt")
 
     def requirements(self):
         self.requires("zlib/[>=1.2.11 <2]")
-        if self.options.get_safe("openssl", False):
+        if self.options.openssl:
             self.requires("openssl/[>=1.1 <4]")
-        if self.options.get_safe("with_pcre2", False):
-            self.requires("pcre2/[>=10.42 <11]")
+        if self.options.with_pcre2:
+            self.requires("pcre2/10.42")
         if self.options.get_safe("with_vulkan"):
             self.requires("vulkan-loader/1.3.268.0")
             if is_apple_os(self):
@@ -400,7 +398,7 @@ class QtConan(ConanFile):
             self.requires("glib/2.78.3")
         # if self.options.with_libiconv: # QTBUG-84708
         #     self.requires("libiconv/1.16")# QTBUG-84708
-        if self.options.get_safe("with_doubleconversion", False) and not self.options.multiconfiguration:
+        if self.options.with_doubleconversion and not self.options.multiconfiguration:
             self.requires("double-conversion/3.3.0")
         if self.options.get_safe("with_freetype", False) and not self.options.multiconfiguration:
             self.requires("freetype/[>=2.13 <3]")
@@ -411,34 +409,31 @@ class QtConan(ConanFile):
         if self.options.get_safe("with_harfbuzz", False) and not self.options.multiconfiguration:
             self.requires("harfbuzz/[>=8.3.0]")
         if self.options.get_safe("with_libjpeg", False) and not self.options.multiconfiguration:
-            if self.options.get_safe("with_libjpeg", False) == "libjpeg-turbo":
+            if self.options.with_libjpeg == "libjpeg-turbo":
                 self.requires("libjpeg-turbo/[>=3.0 <3.1]")
             else:
                 self.requires("libjpeg/[>=9e]")
-        if (
-            self.options.get_safe("with_libpng", False)
-            and not self.options.multiconfiguration
-        ):
+        if self.options.get_safe("with_libpng", False) and not self.options.multiconfiguration:
             self.requires("libpng/[>=1.6 <2]")
-        if self.options.get_safe("with_sqlite3", False) and not self.options.multiconfiguration:
+        if self.options.with_sqlite3 and not self.options.multiconfiguration:
             self.requires("sqlite3/[>=3.45.0 <4]")
         if self.options.get_safe("with_mysql", False) == "mysql":
             self.requires("libmysqlclient/8.1.0")
         if self.options.get_safe("with_mysql", False) == "mariadb":
             self.requires("mariadb-connector-c/3.3.3")
-        if self.options.get_safe("with_pq", False):
+        if self.options.with_pq:
             self.requires("libpq/[>=15.4 <18]")
-        if self.options.get_safe("with_odbc", False):
+        if self.options.with_odbc:
             if self.settings.os != "Windows":
                 self.requires("odbc/2.3.11")
         if self.options.get_safe("with_openal", False):
-            self.requires("openal-soft/[>=1.22.2 <2]")
+            self.requires("openal-soft/1.22.2")
         if self.options.get_safe("with_libalsa", False):
             self.requires("libalsa/1.2.10")
         if self.options.get_safe("with_x11"):
             self.requires("xorg/system")
         if self.options.get_safe("with_x11") or self.options.qtwayland:
-            self.requires("xkbcommon/[>=1.5.0 <2]")
+            self.requires("xkbcommon/1.5.0")
         if self.options.get_safe("opengl", "no") != "no":
             self.requires("opengl/system")
         if self.options.with_zstd:
@@ -455,7 +450,7 @@ class QtConan(ConanFile):
         if self.options.get_safe("with_gstreamer", False):
             self.requires("gst-plugins-base/1.19.2")
         if self.options.get_safe("with_pulseaudio", False):
-            self.requires("pulseaudio/[>=14.2 <20]")
+            self.requires("pulseaudio/14.2")
         if self.options.with_dbus:
             self.requires("dbus/1.15.8")
         if self.options.qtwayland:
@@ -508,15 +503,14 @@ class QtConan(ConanFile):
             strip_root=True, destination="qt5")
 
         apply_conandata_patches(self)
-
         for f in ["renderer", os.path.join("renderer", "core"), os.path.join("renderer", "platform")]:
             replace_in_file(self, os.path.join(self.source_folder, "qt5", "qtwebengine", "src", "3rdparty", "chromium", "third_party", "blink", f, "BUILD.gn"),
-            "  if (enable_precompiled_headers) {\n    if (is_win) {",
-            "  if (enable_precompiled_headers) {\n    if (false) {"
-        )
+                "  if (enable_precompiled_headers) {\n    if (is_win) {",
+                "  if (enable_precompiled_headers) {\n    if (false) {"
+            )
         replace_in_file(self, os.path.join(self.source_folder, "qt5", "qtbase", "configure.json"),
-                "-ldbus-1d",
-                "-ldbus-1"
+            "-ldbus-1d",
+            "-ldbus-1"
         )
         save(self, os.path.join(self.source_folder, "qt5", "qtbase", "mkspecs", "features", "uikit", "bitcode.prf"), "")
 
@@ -681,20 +675,9 @@ class QtConan(ConanFile):
             args.append("-release")
             args.append("-optimize-size")
 
-        # Only skip modules that actually exist in the Qt source directory
         for module in self._submodules:
             if module in self.options and not self.options.get_safe(module):
-                # Check if the module directory actually exists in the source
-                module_path = os.path.join(self.source_folder, "qt5", module)
-                self.output.info(
-                    f"Checking module {module}: path={module_path}, exists={os.path.isdir(module_path)}"
-                )
-                if os.path.isdir(module_path):
-                    args.append("-skip " + module)
-                else:
-                    self.output.warning(
-                        f"Skipping non-existent module {module} - not adding to configure args"
-                    )
+                args.append("-skip " + module)
 
         args.append("--zlib=system")
 
@@ -709,15 +692,13 @@ class QtConan(ConanFile):
         elif opengl == "dynamic":
             args += ["-opengl dynamic"]
 
-        # Vulkan support added in Qt 5.10
-        if Version(self.version) >= "5.10":
-            if self.options.get_safe("with_vulkan", False):
-                args.append("-vulkan")
-            else:
-                args.append("-no-vulkan")
+        if self.options.get_safe("with_vulkan", False):
+            args.append("-vulkan")
+        else:
+            args.append("-no-vulkan")
 
         # openSSL
-        if not self.options.get_safe("openssl", False):
+        if not self.options.openssl:
             args += ["-no-openssl"]
         else:
             if self.dependencies["openssl"].options.shared:
@@ -728,16 +709,13 @@ class QtConan(ConanFile):
         # args.append("--iconv=" + ("gnu" if self.options.with_libiconv else "no"))# QTBUG-84708
 
         args.append("--glib=" + ("yes" if self.options.with_glib else "no"))
-        args.append("--pcre=" + ("system" if self.options.get_safe("with_pcre2", False) else "qt"))
+        args.append("--pcre=" + ("system" if self.options.with_pcre2 else "qt"))
         args.append("--fontconfig=" + ("yes" if self.options.get_safe("with_fontconfig", False) else "no"))
         args.append("--icu=" + ("yes" if self.options.get_safe("with_icu", False) else "no"))
         args.append("--sql-mysql=" + ("yes" if self.options.get_safe("with_mysql", False) else "no"))
-
-        args.append("--sql-psql=" + ("yes" if self.options.get_safe("with_pq", False) else "no"))
-        args.append("--sql-odbc=" + ("yes" if self.options.get_safe("with_odbc", False) else "no"))
-        # zstd support added in Qt 5.13
-        if Version(self.version) >= "5.13":
-            args.append("--zstd=" + ("yes" if self.options.get_safe("with_zstd", False) else "no"))
+        args.append("--sql-psql=" + ("yes" if self.options.with_pq else "no"))
+        args.append("--sql-odbc=" + ("yes" if self.options.with_odbc else "no"))
+        args.append("--zstd=" + ("yes" if self.options.with_zstd else "no"))
 
         if self.options.qtmultimedia:
             args.append("--alsa=" + ("yes" if self.options.get_safe("with_libalsa", False) else "no"))
@@ -749,32 +727,16 @@ class QtConan(ConanFile):
         else:
             args.append("-no-dbus")
 
-        # GSSAPI feature flag added in Qt 5.9
-        if Version(self.version) >= "5.9":
-            args.append(
-                "-feature-gssapi"
-                if self.options.get_safe("with_gssapi", False)
-                else "-no-feature-gssapi"
-            )
+        args.append("-feature-gssapi" if self.options.get_safe("with_gssapi", False) else "-no-feature-gssapi")
 
-        # Build options list based on version
-        opt_list = [
-            ("with_freetype", "freetype"),
-            ("with_harfbuzz", "harfbuzz"),
-            ("with_libjpeg", "libjpeg"),
-            ("with_libpng", "libpng"),
-        ]
-        # doubleconversion added in Qt 5.7
-        if Version(self.version) >= "5.7":
-            opt_list.insert(0, ("with_doubleconversion", "doubleconversion"))
-        # -no-sqlite option added in Qt 5.9
-        if Version(self.version) >= "5.9":
-            opt_list.append(("with_sqlite3", "sqlite"))
-        # libmd4c added in Qt 5.14
-        if Version(self.version) >= "5.14":
-            opt_list.append(("with_md4c", "libmd4c"))
-
-        for opt, conf_arg in opt_list:
+        for opt, conf_arg in [
+                              ("with_doubleconversion", "doubleconversion"),
+                              ("with_freetype", "freetype"),
+                              ("with_harfbuzz", "harfbuzz"),
+                              ("with_libjpeg", "libjpeg"),
+                              ("with_libpng", "libpng"),
+                              ("with_sqlite3", "sqlite"),
+                              ("with_md4c", "libmd4c")]:
             if self.options.get_safe(opt, False):
                 if self.options.multiconfiguration:
                     args += ["-qt-" + conf_arg]
@@ -783,69 +745,56 @@ class QtConan(ConanFile):
             else:
                 args += ["-no-" + conf_arg]
 
-        # Library variable assignment on command line requires Qt >= 5.8
-        if Version(self.version) >= "5.8":
-            libmap = [
-                ("zlib", "ZLIB"),
-                ("openssl", "OPENSSL"),
-                ("pcre2", "PCRE2"),
-                ("glib", "GLIB"),
-                # ("libiconv", "ICONV"),# QTBUG-84708
-                ("double-conversion", "DOUBLECONVERSION"),
-                ("freetype", "FREETYPE"),
-                ("fontconfig", "FONTCONFIG"),
-                ("icu", "ICU"),
-                ("harfbuzz", "HARFBUZZ"),
-                ("libjpeg", "LIBJPEG"),
-                ("libjpeg-turbo", "LIBJPEG"),
-                ("libpng", "LIBPNG"),
-                ("sqlite3", "SQLITE"),
-                ("mariadb-connector-c", "MYSQL"),
-                ("libmysqlclient", "MYSQL"),
-                ("libpq", "PSQL"),
-                ("odbc", "ODBC"),
-                ("sdl2", "SDL2"),
-                ("openal-soft", "OPENAL"),
-                ("zstd", "ZSTD"),
-                ("libalsa", "ALSA"),
-                ("xkbcommon", "XKBCOMMON"),
-                ("md4c", "LIBMD4C"),
-            ]
-            for package, var in libmap:
-                if package in [
-                    d.ref.name for d in self.dependencies.direct_host.values()
-                ]:
-                    p = self.dependencies[package]
-                    if package == "freetype":
-                        args.append(
-                            '"%s_INCDIR=%s"'
-                            % (var, p.cpp_info.aggregated_components().includedirs[-1])
-                        )
-                    args.append('"%s_LIBS=%s"' % (var, " ".join(self._gather_libs(p))))
+        libmap = [("zlib", "ZLIB"),
+                  ("openssl", "OPENSSL"),
+                  ("pcre2", "PCRE2"),
+                  ("glib", "GLIB"),
+                  # ("libiconv", "ICONV"),# QTBUG-84708
+                  ("double-conversion", "DOUBLECONVERSION"),
+                  ("freetype", "FREETYPE"),
+                  ("fontconfig", "FONTCONFIG"),
+                  ("icu", "ICU"),
+                  ("harfbuzz", "HARFBUZZ"),
+                  ("libjpeg", "LIBJPEG"),
+                  ("libjpeg-turbo", "LIBJPEG"),
+                  ("libpng", "LIBPNG"),
+                  ("sqlite3", "SQLITE"),
+                  ("mariadb-connector-c", "MYSQL"),
+                  ("libmysqlclient", "MYSQL"),
+                  ("libpq", "PSQL"),
+                  ("odbc", "ODBC"),
+                  ("sdl2", "SDL2"),
+                  ("openal-soft", "OPENAL"),
+                  ("zstd", "ZSTD"),
+                  ("libalsa", "ALSA"),
+                  ("xkbcommon", "XKBCOMMON"),
+                  ("md4c", "LIBMD4C")]
+        for package, var in libmap:
+            if package in [d.ref.name for d in self.dependencies.direct_host.values()]:
+                p = self.dependencies[package]
+                if package == "freetype":
+                    args.append("\"%s_INCDIR=%s\"" % (var, p.cpp_info.aggregated_components().includedirs[-1]))
+                args.append("\"%s_LIBS=%s\"" % (var, " ".join(self._gather_libs(p))))
 
         for dependency in self.dependencies.direct_host.values():
             args += [f"-I \"{s}\"" for s in dependency.cpp_info.aggregated_components().includedirs]
             args += [f"-D {s}" for s in dependency.cpp_info.aggregated_components().defines]
 
-        # QMAKE variable assignment on command line added in Qt 5.8
-        if Version(self.version) >= "5.8":
-            libdirs = [l for dependency in self.dependencies.host.values() for l in dependency.cpp_info.aggregated_components().libdirs]
-            args.append("QMAKE_LIBDIR+=\"%s\"" % " ".join(libdirs))
-            if not is_msvc(self):
-                args.append("QMAKE_RPATHLINKDIR+=\"%s\"" % ":".join(libdirs))
+        libdirs = [l for dependency in self.dependencies.host.values() for l in dependency.cpp_info.aggregated_components().libdirs]
+        args.append("QMAKE_LIBDIR+=\"%s\"" % " ".join(libdirs))
+        if not is_msvc(self):
+            args.append("QMAKE_RPATHLINKDIR+=\"%s\"" % ":".join(libdirs))
 
-            if "libmysqlclient" in [d.ref.name for d in self.dependencies.direct_host.values()]:
-                args.append("-mysql_config \"%s\"" % os.path.join(self.dependencies["libmysqlclient"].package_folder, "bin", "mysql_config"))
-            if "mariadb-connector-c" in [d.ref.name for d in self.dependencies.direct_host.values()]:
-                args.append("-mysql_config \"%s\"" % os.path.join(self.dependencies["mariadb-connector-c"].package_folder, "bin", "mysql_config"))
-            if "libpq" in [d.ref.name for d in self.dependencies.direct_host.values()]:
-                args.append("-psql_config \"%s\"" % os.path.join(self.dependencies["libpq"].package_folder, "bin", "pg_config"))
+        if "libmysqlclient" in [d.ref.name for d in self.dependencies.direct_host.values()]:
+            args.append("-mysql_config \"%s\"" % os.path.join(self.dependencies["libmysqlclient"].package_folder, "bin", "mysql_config"))
+        if "mariadb-connector-c" in [d.ref.name for d in self.dependencies.direct_host.values()]:
+            args.append("-mysql_config \"%s\"" % os.path.join(self.dependencies["mariadb-connector-c"].package_folder, "bin", "mysql_config"))
+        if "libpq" in [d.ref.name for d in self.dependencies.direct_host.values()]:
+            args.append("-psql_config \"%s\"" % os.path.join(self.dependencies["libpq"].package_folder, "bin", "pg_config"))
         if self.settings.os == "Macos":
             args += ["-no-framework"]
-            # QMAKE variable setting on command line requires Qt >= 5.8
-            if Version(self.version) >= "5.8":
-                args.append(f"QMAKE_APPLE_DEVICE_ARCHS={to_apple_arch(self)}")
-                args.append("QMAKE_CXXFLAGS+=-mmacosx-version-min=10.13")
+            args.append(f"QMAKE_APPLE_DEVICE_ARCHS={to_apple_arch(self)}")
+            args.append("QMAKE_CXXFLAGS+=-mmacosx-version-min=10.13")
         elif self.settings.os == "Android":
             args += [f"-android-ndk-platform android-{self.settings.os.api_level}"]
             args += [f"-android-abis {android_abi(self)}"]
@@ -907,8 +856,7 @@ class QtConan(ConanFile):
             # are not found (unless they can be accidentally found in system paths).
             # So the workaround is to add libdirs of these external dependencies to LC_RPATH
             # of runtime artifacts.
-            # QMAKE_RPATHDIR variable assignment requires Qt >= 5.8
-            if not cross_building(self) and Version(self.version) >= "5.8":
+            if not cross_building(self):
                 for libpath in VirtualRunEnv(self).vars().get("DYLD_LIBRARY_PATH", "").split(":"):
                     # see https://doc.qt.io/qt-5/qmake-variable-reference.html#qmake-rpathdir
                     args += [f'QMAKE_RPATHDIR+="{libpath}"']
@@ -1158,13 +1106,13 @@ Prefix = ..""")
             self.cpp_info.components[componentname].requires = _get_corrected_reqs(requires)
 
         core_reqs = ["zlib::zlib"]
-        if self.options.get_safe("with_pcre2", False):
+        if self.options.with_pcre2:
             core_reqs.append("pcre2::pcre2")
-        if self.options.get_safe("with_doubleconversion", False):
+        if self.options.with_doubleconversion:
             core_reqs.append("double-conversion::double-conversion")
         if self.options.get_safe("with_icu", False):
             core_reqs.append("icu::icu")
-        if self.options.get_safe("with_zstd", False):
+        if self.options.with_zstd:
             core_reqs.append("zstd::zstd")
         if self.options.with_glib:
             core_reqs.append("glib::glib-2.0")
@@ -1194,9 +1142,9 @@ Prefix = ..""")
             gui_reqs = []
             if self.options.with_dbus:
                 gui_reqs.append("DBus")
-            if self.options.get_safe("with_freetype", False):
+            if self.options.with_freetype:
                 gui_reqs.append("freetype::freetype")
-            if self.options.get_safe("with_libpng", False):
+            if self.options.with_libpng:
                 gui_reqs.append("libpng::libpng")
             if self.options.get_safe("with_fontconfig", False):
                 gui_reqs.append("fontconfig::fontconfig")
@@ -1213,13 +1161,13 @@ Prefix = ..""")
                 gui_reqs.append("vulkan-loader::vulkan-loader")
                 if is_apple_os(self):
                     gui_reqs.append("moltenvk::moltenvk")
-            if self.options.get_safe("with_harfbuzz", False):
+            if self.options.with_harfbuzz:
                 gui_reqs.append("harfbuzz::harfbuzz")
-            if self.options.get_safe("with_libjpeg", False) == "libjpeg-turbo":
+            if self.options.with_libjpeg == "libjpeg-turbo":
                 gui_reqs.append("libjpeg-turbo::libjpeg-turbo")
-            if self.options.get_safe("with_libjpeg", False) == "libjpeg":
+            if self.options.with_libjpeg == "libjpeg":
                 gui_reqs.append("libjpeg::libjpeg")
-            if self.options.get_safe("with_md4c", False):
+            if self.options.with_md4c:
                 gui_reqs.append("md4c::md4c")
             _create_module("Gui", gui_reqs)
             _add_build_module("qtGui", self._cmake_qt5_private_file("Gui"))
@@ -1241,6 +1189,7 @@ Prefix = ..""")
                 self.cpp_info.components["qtFontDatabaseSupport"].requires.append("fontconfig::fontconfig")
             if self.options.get_safe("with_freetype"):
                 self.cpp_info.components["qtFontDatabaseSupport"].requires.append("freetype::freetype")
+
 
             _create_module("ThemeSupport", ["Core", "Gui"])
             _create_module("AccessibilitySupport", ["Core", "Gui"])
@@ -1317,25 +1266,22 @@ Prefix = ..""")
                 if self.options.get_safe("with_vulkan"):
                     xcb_qpa_reqs.append("VulkanSupport")
                 if self.options.get_safe("with_x11", False):
-                    xcb_qpa_reqs += ["Core", "Gui", "ServiceSupport", "ThemeSupport", "FontDatabaseSupport",
-                                    "EdidSupport", "xorg::xorg"]
                     _create_module("XcbQpa", xcb_qpa_reqs, has_include_dir=False)
                     _create_plugin("QXcbIntegrationPlugin", "qxcb", "platforms", ["Core", "Gui", "XcbQpa"])
-                    _create_plugin("QXcbGlxIntegrationPlugin", "qxcb-glx-integration", "xcbglintegrations", ["Core", "Gui"])
 
-        if self.options.get_safe("with_sqlite3", False):
+        if self.options.with_sqlite3:
             _create_plugin("QSQLiteDriverPlugin", "qsqlite", "sqldrivers", ["sqlite3::sqlite3"])
-        if self.options.get_safe("with_pq", False):
+        if self.options.with_pq:
             _create_plugin("QPSQLDriverPlugin", "qsqlpsql", "sqldrivers", ["libpq::libpq"])
         if self.options.get_safe("with_mysql", False) == "mysql":
             _create_plugin("QMySQLDriverPlugin", "qsqlmysql", "sqldrivers", ["libmysqlclient::libmysqlclient"])
         if self.options.get_safe("with_mysql", False) == "mariadb":
             _create_plugin("QMySQLDriverPlugin", "qsqlmysql", "sqldrivers", ["mariadb-connector-c::mariadb-connector-c"])
-        if self.options.get_safe("with_odbc", False):
+        if self.options.with_odbc:
             if self.settings.os != "Windows":
                 _create_plugin("QODBCDriverPlugin", "qsqlodbc", "sqldrivers", ["odbc::odbc"])
         networkReqs = []
-        if self.options.get_safe("openssl", False):
+        if self.options.openssl:
             networkReqs.append("openssl::openssl")
         if self.settings.os in ['Linux', 'FreeBSD'] and self.options.with_gssapi:
             networkReqs.append("krb5::krb5-gssapi")
@@ -1385,7 +1331,7 @@ Prefix = ..""")
             _create_module("QuickControls2", ["Gui", "Quick"])
             _create_module("QuickTemplates2", ["Gui", "Quick"])
 
-        if self.options.gui and self.options.get_safe("qtsvg"):
+        if self.options.qtsvg and self.options.gui:
             _create_module("Svg", ["Gui"])
             _create_plugin("QSvgIconPlugin", "qsvgicon", "iconengines", [])
             _create_plugin("QSvgPlugin", "qsvg", "imageformats", [])
@@ -1611,7 +1557,7 @@ Prefix = ..""")
                 self.cpp_info.components["qtNetwork"].frameworks.append("SystemConfiguration")
                 if self.options.with_gssapi:
                     self.cpp_info.components["qtNetwork"].frameworks.append("GSS")
-                if not self.options.get_safe("openssl", False): # with SecureTransport
+                if not self.options.openssl: # with SecureTransport
                     self.cpp_info.components["qtNetwork"].frameworks.append("Security")
             if self.settings.os == "Macos" or (self.settings.os == "iOS" and Version(self.settings.compiler.version) >= "14.0"):
                 self.cpp_info.components["qtCore"].frameworks.append("IOKit")     # qtcore requires "_IORegistryEntryCreateCFProperty", "_IOServiceGetMatchingService" and much more which are in "IOKit" framework
